@@ -1,25 +1,24 @@
 # @octri/cli
 
-`octri` — drive the Octri dashboard from a terminal, and expose the same surface
-to AI agents over MCP.
+**The `octri` command line: push OpenAPI specs, build SDKs, and read your API
+documentation from a terminal, with an MCP server that hands an AI agent the
+same commands.** Push a spec, trigger an SDK build across ten languages, watch
+every lane live, pull the artifacts down, read the emitted source, and diff two
+runs to see exactly what a generator change did.
 
-Built for one job in particular: **iterating on the SDK generator without the web
-UI.** Push a spec, trigger a build across ten languages, watch every lane live,
-pull the artifacts down, read the emitted source, and diff two runs to see
-exactly what a generator change did.
+Octri turns an OpenAPI spec into a documentation site, client SDKs for ten
+languages, an MCP server your AI assistant can call, and monitoring for the
+API behind them. This package is the CLI, and it carries its own MCP server so
+an agent can run the same commands. See [octri.dev](https://octri.dev).
+
+Node 20 or newer.
+
+## Install
 
 ```bash
-pnpm --filter @octri/cli build
-node packages/octri-cli/dist/bin.js --help
+npm install -g @octri/cli
+octri --help
 ```
-
-To get `octri` on your PATH while developing:
-
-```bash
-cd packages/octri-cli && npm link
-```
-
----
 
 ## Quick start
 
@@ -183,3 +182,39 @@ pnpm --filter @octri/cli build
 pnpm --filter @octri/cli typecheck
 pnpm --filter @octri/cli test
 ```
+
+To put a development build of `octri` on your PATH:
+
+```bash
+cd packages/octri-cli && npm link
+```
+
+---
+
+## The rest of Octri
+
+| Product | What it does |
+|---|---|
+| [API Studio](https://octri.dev/api-studio) | Your OpenAPI spec becomes a hosted documentation site with a live request playground, editable page by page. |
+| [SDK Studio](https://octri.dev/sdk-studio) | The same spec becomes client libraries for ten languages, versioned and released together. |
+| [MCP](https://octri.dev/mcp) | Your endpoints and docs become tools an AI assistant can call, generated from the same spec. |
+| [Monitoring](https://octri.dev/monitoring) | Errors, traces, uptime and releases for the API, joined to the SDK calls that reached it. |
+
+### Monitoring runtimes
+
+[Node](https://github.com/octridev/octri-node) ·
+[Python](https://github.com/octridev/octri-python) ·
+[Go](https://github.com/octridev/octri-go) ·
+[Ruby](https://github.com/octridev/octri-ruby) ·
+[Rust](https://github.com/octridev/octri-rust) ·
+[PHP](https://github.com/octridev/octri-php) ·
+[Java](https://github.com/octridev/octri-java) ·
+[Kotlin](https://github.com/octridev/octri-kotlin) ·
+[Swift](https://github.com/octridev/octri-swift) ·
+[Dart](https://github.com/octridev/octri-dart)
+
+[Documentation](https://docs.octri.dev/docs) ·
+[Pricing](https://octri.dev/pricing) ·
+[Changelog](https://docs.octri.dev/changelog)
+
+MIT licensed.

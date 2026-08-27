@@ -2,6 +2,24 @@
   "name": "@octri/cli",
   "version": "0.1.0",
   "description": "Octri command line — drive projects, specs, docs and the SDK generator from a terminal, plus an MCP server that exposes the same surface to AI agents.",
+  "keywords": [
+    "octri",
+    "cli",
+    "sdk-generator",
+    "openapi",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "homepage": "https://octri.dev",
+  "bugs": {
+    "url": "https://octri.dev/support"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octridev/octri-cli.git"
+  },
+  "license": "MIT",
+  "author": "Octri",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,6 +30,12 @@
     "dist/**",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/bin.js",
     "dev": "tsc -p tsconfig.json --watch",
@@ -20,27 +44,11 @@
     "test": "tsc -p tsconfig.json && node --test dist/*.test.js",
     "clean": "rm -rf dist .turbo"
   },
-  "keywords": [
-    "octri",
-    "cli",
-    "sdk-generator",
-    "openapi",
-    "mcp",
-    "model-context-protocol"
-  ],
-  "author": "Octri",
-  "license": "MIT",
-  "publishConfig": {
-    "access": "public"
-  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
-  },
-  "engines": {
-    "node": ">=20.0.0"
   }
 }
