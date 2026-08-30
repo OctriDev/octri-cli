@@ -46,7 +46,10 @@ export class NotAuthenticatedError extends Error {
  * the session only as cookies — the JSON body carries user/org, not tokens — so
  * this is how the CLI acquires a bearer token in the first place.
  */
-export function cookieFrom(response: Response, name: string): string | undefined {
+export function cookieFrom(
+  response: Response,
+  name: string,
+): string | undefined {
   const raw =
     typeof response.headers.getSetCookie === "function"
       ? response.headers.getSetCookie()
@@ -116,7 +119,7 @@ export class OctriClient {
     const response = await this.send(path, options);
 
     // One silent refresh, then give up and tell the user to sign in again.
-    if (response.status === 401 && !options.anonymous) {
+    if (response.status === 401 && options.anonymous !== true) {
       const refreshed = await this.refresh();
       if (refreshed) {
         const retry = await this.send(path, options);
@@ -129,14 +132,23 @@ export class OctriClient {
 
   /** GET that returns the raw Response — for streaming artifact downloads. */
   async fetchRaw(url: string): Promise<Response> {
-    const response = await fetch(url, { headers: this.authHeaders() });
+    const target = new URL(url);
+    const api = new URL(this.settings.apiUrl);
+    const response = await fetch(url, {
+      // Never forward an Octri session or API key to a CDN/R2 host. Presigned
+      // URLs authenticate in their query string; an Authorization header can
+      // invalidate them and would disclose the caller's Octri credential.
+      headers: target.origin === api.origin ? this.authHeaders() : {},
+    });
     if (!response.ok) {
+      target.search = "";
+      target.hash = "";
       throw new ApiError(
         `Download failed (${response.status})`,
         response.status,
         "DOWNLOAD_FAILED",
         undefined,
-        url,
+        target.toString(),
       );
     }
     return response;
@@ -144,10 +156,7 @@ export class OctriClient {
 
   // ── Internals ───────────────────────────────────────────────────────────────
 
-  private buildUrl(
-    path: string,
-    query: RequestOptions["query"],
-  ): string {
+  private buildUrl(path: string, query: RequestOptions["query"]): string {
     const url = new URL(
       `${this.settings.apiUrl}${path.startsWith("/") ? path : `/${path}`}`,
     );
@@ -160,17 +169,14 @@ export class OctriClient {
   private authHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
     if (this.accessToken !== undefined) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
+      headers.Authorization = `Bearer ${this.accessToken}`;
     } else if (this.settings.apiKey !== undefined) {
       headers["X-API-Key"] = this.settings.apiKey;
     }
     return headers;
   }
 
-  private async send(
-    path: string,
-    options: RequestOptions,
-  ): Promise<Response> {
+  private async send(path: string, options: RequestOptions): Promise<Response> {
     const {
       method = "GET",
       body,
@@ -277,7 +283,10 @@ export class OctriClient {
 
     this.accessToken = access;
     if (this.persist) {
-      updateProfile({ accessToken: access, refreshToken: nextRefresh });
+      updateProfile(
+        { accessToken: access, refreshToken: nextRefresh },
+        this.settings.profile,
+      );
     }
     return true;
   }
@@ -303,6 +312,28 @@ export interface LoginResult {
   org: SessionOrg;
   accessToken: string;
   refreshToken: string | undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function hasSessionIdentity(
+  payload: unknown,
+): payload is { user: SessionUser; org: SessionOrg } {
+  if (!isRecord(payload) || !isRecord(payload.user) || !isRecord(payload.org)) {
+    return false;
+  }
+  return (
+    typeof payload.user.id === "string" &&
+    typeof payload.user.email === "string" &&
+    (payload.user.name === undefined ||
+      typeof payload.user.name === "string") &&
+    typeof payload.org.id === "string" &&
+    typeof payload.org.name === "string" &&
+    typeof payload.org.plan === "string" &&
+    typeof payload.org.billingStatus === "string"
+  );
 }
 
 /** MFA-enabled accounts get a challenge instead of a session. */
@@ -346,10 +377,13 @@ export async function login(
       "Login succeeded but no session cookie was returned — is this an Octri API?",
     );
   }
+  if (!hasSessionIdentity(payload)) {
+    throw new Error("Login succeeded but the session identity was missing.");
+  }
 
   return {
-    user: payload?.user as SessionUser,
-    org: payload?.org as SessionOrg,
+    user: payload.user,
+    org: payload.org,
     accessToken,
     refreshToken: cookieFrom(response, "refresh_token"),
   };
@@ -385,10 +419,15 @@ export async function completeMfa(
   if (accessToken === undefined) {
     throw new Error("MFA challenge succeeded but no session cookie came back.");
   }
+  if (!hasSessionIdentity(payload)) {
+    throw new Error(
+      "MFA challenge succeeded but the session identity was missing.",
+    );
+  }
 
   return {
-    user: payload?.user as SessionUser,
-    org: payload?.org as SessionOrg,
+    user: payload.user,
+    org: payload.org,
     accessToken,
     refreshToken: cookieFrom(response, "refresh_token"),
   };

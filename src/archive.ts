@@ -7,9 +7,9 @@
  * produced by a remote service.
  */
 
-import { gunzipSync, inflateRawSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize, sep } from "node:path";
+import { gunzipSync, inflateRawSync } from "node:zlib";
 
 export interface ExtractedFile {
   path: string;
@@ -21,7 +21,7 @@ export interface ExtractedFile {
 /** Returns a destination-relative path, or null when the entry escapes it. */
 function safePath(entry: string): string | null {
   const cleaned = normalize(entry).replace(/^([/\\])+/, "");
-  if (cleaned === "" || cleaned === "." ) return null;
+  if (cleaned === "" || cleaned === ".") return null;
   if (cleaned.split(/[/\\]/).includes("..")) return null;
   return cleaned;
 }
@@ -49,7 +49,8 @@ export function extractTar(
 
     const rawName = readString(header, 0, 100);
     const sizeField = readString(header, 124, 12).trim();
-    const size = parseInt(sizeField.replace(/[^0-7]/g, ""), 8) || 0;
+    const parsedSize = parseInt(sizeField.replace(/[^0-7]/g, ""), 8);
+    const size = Number.isNaN(parsedSize) ? 0 : parsedSize;
     const typeFlag = String.fromCharCode(header[156] ?? 0);
     const prefix = readString(header, 345, 155);
 
@@ -114,7 +115,8 @@ export function extractZip(
   destination: string,
 ): ExtractedFile[] {
   const eocd = findEocd(buffer);
-  if (eocd === -1) throw new Error("Not a zip archive (no end-of-directory record).");
+  if (eocd === -1)
+    throw new Error("Not a zip archive (no end-of-directory record).");
 
   const entryCount = buffer.readUInt16LE(eocd + 10);
   let pointer = buffer.readUInt32LE(eocd + 16);
@@ -164,7 +166,7 @@ export function extractZip(
     writeFileSync(target, content);
     written.push({
       path: relative.split(sep).join("/"),
-      size: uncompressedSize || content.length,
+      size: uncompressedSize === 0 ? content.length : uncompressedSize,
     });
   }
 
@@ -199,6 +201,13 @@ export function extract(
   if (filename.endsWith(".tar")) return extractTar(buffer, destination);
 
   throw new Error(
-    `Unrecognised archive format for ${filename || "artifact"} — expected .tgz or .zip.`,
+    `Unrecognised archive format for ${filename === "" ? "artifact" : filename} — expected .tgz or .zip.`,
   );
+}
+
+/** Returns an archive label that cannot disclose a presigned URL credential. */
+export function safeArtifactFilename(url: string): string {
+  const pathname = new URL(url).pathname;
+  const filename = pathname.slice(pathname.lastIndexOf("/") + 1);
+  return filename === "" ? "artifact" : filename;
 }

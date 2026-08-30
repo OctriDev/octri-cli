@@ -10,13 +10,6 @@
 
 import { flagBool, flagString, parse } from "./args.js";
 import { ApiError, NotAuthenticatedError } from "./client.js";
-import { createContext, type Context } from "./context.js";
-import { printHelp } from "./help.js";
-import { NonInteractiveError } from "./ui/prompt.js";
-import { configureOutput, fail, line, note } from "./ui/output.js";
-import { cursor, dim } from "./ui/ansi.js";
-import { write } from "./ui/output.js";
-
 import * as auth from "./commands/auth.js";
 import * as configCmd from "./commands/config.js";
 import * as docs from "./commands/docs.js";
@@ -24,6 +17,11 @@ import * as lab from "./commands/lab.js";
 import * as projects from "./commands/projects.js";
 import * as sdk from "./commands/sdk.js";
 import * as specs from "./commands/specs.js";
+import { createContext, type Context } from "./context.js";
+import { printHelp } from "./help.js";
+import { cursor, dim } from "./ui/ansi.js";
+import { write, configureOutput, fail, line, note } from "./ui/output.js";
+import { NonInteractiveError } from "./ui/prompt.js";
 
 const VERSION = "0.1.0";
 
@@ -35,7 +33,7 @@ type Handler = (ctx: Context) => void | Promise<void>;
  */
 const ROUTES: Record<string, Handler> = {
   // auth
-  "auth": auth.authWhoami,
+  auth: auth.authWhoami,
   "auth login": auth.authLogin,
   "auth logout": auth.authLogout,
   "auth whoami": auth.authWhoami,
@@ -43,14 +41,14 @@ const ROUTES: Record<string, Handler> = {
   "auth profiles": () => auth.authProfiles(),
 
   // config
-  "config": configCmd.configList,
+  config: configCmd.configList,
   "config list": configCmd.configList,
   "config set": (ctx) => configCmd.configSet(ctx.args),
   "config use": (ctx) => configCmd.configUse(ctx.args),
   "config path": () => configCmd.configPathCommand(),
 
   // projects
-  "projects": projects.projectsList,
+  projects: projects.projectsList,
   "projects list": projects.projectsList,
   "projects show": projects.projectsShow,
   "projects create": projects.projectsCreate,
@@ -58,7 +56,7 @@ const ROUTES: Record<string, Handler> = {
   "projects current": projects.projectsCurrent,
 
   // specs
-  "specs": specs.specsList,
+  specs: specs.specsList,
   "specs list": specs.specsList,
   "specs push": specs.specsPush,
   "specs import": specs.specsImport,
@@ -66,7 +64,7 @@ const ROUTES: Record<string, Handler> = {
   "specs delete": specs.specsDelete,
 
   // sdk
-  "sdk": sdk.sdkBuilds,
+  sdk: sdk.sdkBuilds,
   "sdk languages": sdk.sdkLanguages,
   "sdk operations": sdk.sdkOperations,
   "sdk validate": sdk.sdkValidate,
@@ -83,7 +81,7 @@ const ROUTES: Record<string, Handler> = {
   "sdk stats": sdk.sdkStats,
 
   // lab
-  "lab": lab.labRuns,
+  lab: lab.labRuns,
   "lab run": lab.labRun,
   "lab runs": (ctx) => lab.labRuns(ctx),
   "lab pull": lab.labPull,
@@ -92,7 +90,7 @@ const ROUTES: Record<string, Handler> = {
   "lab diff": (ctx) => lab.labDiff(ctx),
 
   // docs / mcp
-  "docs": docs.docsPages,
+  docs: docs.docsPages,
   "docs pages": docs.docsPages,
   "docs show": docs.docsShow,
   "docs changelog": docs.docsChangelog,
@@ -112,6 +110,24 @@ async function routeSettings(ctx: Context): Promise<boolean> {
   else if (action === "set") await sdk.sdkSettingsSet(ctx);
   else throw new Error("Usage: octri sdk settings <get|set>");
 
+  return true;
+}
+
+/** `sdk repos init` is three tokens deep, like `sdk settings get|set`. */
+async function routeRepos(ctx: Context): Promise<boolean> {
+  const [group, verb] = ctx.args.command;
+  if (group !== "sdk" || verb !== "repos") return false;
+
+  const action = ctx.args.positionals[0];
+  if (action === undefined || action === "list") {
+    if (action === "list") ctx.args.positionals.shift();
+    await sdk.sdkRepos(ctx);
+  } else if (action === "init") {
+    ctx.args.positionals.shift();
+    await sdk.sdkReposInit(ctx);
+  } else {
+    throw new Error("Usage: octri sdk repos [list|init]");
+  }
   return true;
 }
 
@@ -140,16 +156,13 @@ async function main(): Promise<void> {
   // `mcp serve` never builds a terminal context: stdout belongs to the protocol.
   if (group === "mcp" && verb === "serve") {
     const { serve } = await import("./mcp/server.js");
+    const profile = flagString(args, "profile");
+    const apiUrl = flagString(args, "api-url");
+    const project = flagString(args, "project");
     await serve({
-      ...(flagString(args, "profile") === undefined
-        ? {}
-        : { profile: flagString(args, "profile") as string }),
-      ...(flagString(args, "api-url") === undefined
-        ? {}
-        : { apiUrl: flagString(args, "api-url") as string }),
-      ...(flagString(args, "project") === undefined
-        ? {}
-        : { project: flagString(args, "project") as string }),
+      ...(profile === undefined ? {} : { profile }),
+      ...(apiUrl === undefined ? {} : { apiUrl }),
+      ...(project === undefined ? {} : { project }),
       allowPublish: flagBool(args, "allow-publish"),
       allowDelete: flagBool(args, "allow-delete"),
     });
@@ -159,6 +172,7 @@ async function main(): Promise<void> {
   const ctx = createContext(args);
 
   if (await routeSettings(ctx)) return;
+  if (await routeRepos(ctx)) return;
 
   const handler =
     ROUTES[verb === undefined ? group : `${group} ${verb}`] ?? ROUTES[group];
@@ -194,7 +208,11 @@ function report(err: unknown): void {
 
   if (err instanceof ApiError) {
     fail(err.message);
-    line(dim(`  ${err.code}${err.status > 0 ? ` · HTTP ${err.status}` : ""} · ${err.path}`));
+    line(
+      dim(
+        `  ${err.code}${err.status > 0 ? ` · HTTP ${err.status}` : ""} · ${err.path}`,
+      ),
+    );
     if (err.status === 401) note("octri auth login");
     if (err.status === 403) note("The plan or your role may not allow this.");
     if (err.code === "NETWORK") {
@@ -205,7 +223,7 @@ function report(err: unknown): void {
   }
 
   fail((err as Error).message ?? String(err));
-  if (process.env["OCTRI_DEBUG"] !== undefined) {
+  if (process.env.OCTRI_DEBUG !== undefined) {
     line(dim(String((err as Error).stack ?? "")));
   }
   process.exitCode = 1;

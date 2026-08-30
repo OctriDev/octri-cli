@@ -11,9 +11,10 @@ import {
   updateProfile,
   useProfile,
 } from "../config.js";
-import type { Context } from "../context.js";
 import { bold, dim } from "../ui/ansi.js";
 import { emit, heading, keyValues, line, success } from "../ui/output.js";
+
+import type { Context } from "../context.js";
 
 /** Keys a user may set. Tokens are deliberately not editable by hand. */
 const EDITABLE = new Set([
@@ -32,15 +33,21 @@ export function configList(ctx: Context): void {
     apiKey: profile.apiKey === undefined ? undefined : "<stored>",
   };
 
-  emit({ path: configPath(), profile: ctx.settings.profile, values: redacted }, () => {
-    heading(`Profile ${bold(ctx.settings.profile)}`);
-    keyValues(
-      Object.entries(redacted)
-        .filter(([, v]) => v !== undefined)
-        .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)] as const),
-    );
-    line(dim(`  ${configPath()}`));
-  });
+  emit(
+    { path: configPath(), profile: ctx.settings.profile, values: redacted },
+    () => {
+      heading(`Profile ${bold(ctx.settings.profile)}`);
+      keyValues(
+        Object.entries(redacted)
+          .filter(([, v]) => v !== undefined)
+          .map(
+            ([k, v]) =>
+              [k, Array.isArray(v) ? v.join(", ") : String(v)] as const,
+          ),
+      );
+      line(dim(`  ${configPath()}`));
+    },
+  );
 }
 
 export function configSet(args: ParsedArgs): void {
@@ -65,7 +72,10 @@ export function configSet(args: ParsedArgs): void {
         ? { defaultLanguages: value.split(",").map((s) => s.trim()) }
         : { [key]: value };
 
-  const updated = updateProfile(patch) as unknown as Record<string, unknown>;
+  const updated = updateProfile(
+    patch,
+    flagString(args, "profile"),
+  ) as unknown as Record<string, unknown>;
   emit({ key, value: patch[key] }, () =>
     success(`${key} = ${String(updated[key])}`),
   );

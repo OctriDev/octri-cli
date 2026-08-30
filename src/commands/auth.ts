@@ -14,18 +14,18 @@ import {
   type MfaChallenge,
 } from "../client.js";
 import { readConfig, updateProfile } from "../config.js";
-import type { Context } from "../context.js";
-import * as api from "../api.js";
 import { accent, bold, dim, gray, green } from "../ui/ansi.js";
 import { emit, heading, keyValues, line, success, warn } from "../ui/output.js";
 import * as prompt from "../ui/prompt.js";
 import { withSpinner } from "../ui/spinner.js";
 
+import type * as api from "../api.js";
+import type { Context } from "../context.js";
+
 export async function authLogin(ctx: Context): Promise<void> {
   const { settings, args } = ctx;
 
-  const email =
-    flagString(args, "email") ?? (await prompt.text("Email"));
+  const email = flagString(args, "email") ?? (await prompt.text("Email"));
   const password =
     flagString(args, "password") ??
     (await prompt.text("Password", { secret: true }));
@@ -52,14 +52,17 @@ export async function authLogin(ctx: Context): Promise<void> {
     );
   }
 
-  const session = result as LoginResult;
-  updateProfile({
-    apiUrl: settings.apiUrl,
-    accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
-    email: session.user.email,
-    orgId: session.org.id,
-  });
+  const session = result;
+  updateProfile(
+    {
+      apiUrl: settings.apiUrl,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      email: session.user.email,
+      orgId: session.org.id,
+    },
+    settings.profile,
+  );
 
   emit(
     {
@@ -84,12 +87,15 @@ export async function authLogout(ctx: Context): Promise<void> {
   } catch {
     warn("Server-side logout failed; clearing local credentials anyway.");
   }
-  updateProfile({
-    accessToken: undefined,
-    refreshToken: undefined,
-    email: undefined,
-    orgId: undefined,
-  });
+  updateProfile(
+    {
+      accessToken: undefined,
+      refreshToken: undefined,
+      email: undefined,
+      orgId: undefined,
+    },
+    ctx.settings.profile,
+  );
   emit({ ok: true }, () => success("Signed out."));
 }
 
@@ -103,14 +109,18 @@ export async function authWhoami(ctx: Context): Promise<void> {
     () => {
       heading("Session");
       keyValues([
-        ["user", `${identity.user.name ?? ""} ${dim(`<${identity.user.email}>`)}`.trim()],
+        [
+          "user",
+          `${identity.user.name ?? ""} ${dim(`<${identity.user.email}>`)}`.trim(),
+        ],
         ["org", `${identity.org.name} ${dim(`(${identity.org.plan})`)}`],
         ["role", identity.role ?? dim("—")],
         ["profile", ctx.settings.profile],
         ["api", ctx.settings.apiUrl],
         [
           "project",
-          ctx.settings.defaultProject ?? dim("none — run `octri projects use <id>`"),
+          ctx.settings.defaultProject ??
+            dim("none — run `octri projects use <id>`"),
         ],
       ]);
     },
@@ -136,7 +146,8 @@ export function authProfiles(): void {
     apiUrl: profile.apiUrl,
     email: profile.email,
     project: profile.defaultProject,
-    authenticated: profile.accessToken !== undefined || profile.apiKey !== undefined,
+    authenticated:
+      profile.accessToken !== undefined || profile.apiKey !== undefined,
   }));
 
   emit({ current: config.current, profiles: rows }, () => {
@@ -152,8 +163,6 @@ export function authProfiles(): void {
   });
 }
 
-function isChallenge(
-  value: LoginResult | MfaChallenge,
-): value is MfaChallenge {
+function isChallenge(value: LoginResult | MfaChallenge): value is MfaChallenge {
   return (value as MfaChallenge).mfaRequired === true;
 }

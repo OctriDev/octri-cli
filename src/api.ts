@@ -211,11 +211,18 @@ export async function listSpecs(
  * `/specs/upload` route — same ingestion pipeline, no multipart encoding to
  * hand-roll, and it works identically for JSON and YAML.
  */
+export interface SpecIngestResult {
+  specId: string;
+  version: string;
+  endpointCount: number;
+  jobs?: unknown;
+}
+
 export function uploadSpecContent(
   client: OctriClient,
   projectId: string,
   content: string,
-): Promise<{ spec: Spec; jobs?: unknown }> {
+): Promise<SpecIngestResult> {
   return client.request(`/projects/${projectId}/specs/raw`, {
     method: "POST",
     body: { content },
@@ -228,7 +235,7 @@ export function importSpecUrl(
   client: OctriClient,
   projectId: string,
   url: string,
-): Promise<{ spec: Spec; jobs?: unknown }> {
+): Promise<SpecIngestResult> {
   return client.request(`/projects/${projectId}/specs/url`, {
     method: "POST",
     body: { url },
@@ -438,9 +445,11 @@ export async function listArtifacts(
   client: OctriClient,
   projectId: string,
   buildId: string,
+  directDownload = false,
 ): Promise<Artifact[]> {
   const body = await client.request<{ artifacts: Artifact[] }>(
     `/projects/${projectId}/sdk/builds/${buildId}/artifacts`,
+    directDownload ? { query: { delivery: "direct" } } : {},
   );
   return body.artifacts ?? [];
 }
@@ -451,17 +460,21 @@ export function retryBuild(
   buildId: string,
   languages: string[],
 ): Promise<unknown> {
-  return client.request(
-    `/projects/${projectId}/sdk/builds/${buildId}/retry`,
-    { method: "POST", body: { languages } },
-  );
+  return client.request(`/projects/${projectId}/sdk/builds/${buildId}/retry`, {
+    method: "POST",
+    body: { languages },
+  });
 }
 
 export function publishBuild(
   client: OctriClient,
   projectId: string,
   buildId: string,
-  input: { languages?: string[]; mode?: "pack" | "release"; skipValidate?: boolean },
+  input: {
+    languages?: string[];
+    mode?: "pack" | "release";
+    skipValidate?: boolean;
+  },
 ): Promise<unknown> {
   return client.request(
     `/projects/${projectId}/sdk/builds/${buildId}/publish`,
@@ -471,14 +484,30 @@ export function publishBuild(
 
 // ─── SDK: per-language repos ──────────────────────────────────────────────────
 
+export interface SdkRepoQuality {
+  state: string;
+}
+
+export interface SdkRepoTarget {
+  owner: string;
+  repo: string;
+  branch: string;
+  commitSha?: string | null;
+  stagedAt?: string | null;
+  quality?: SdkRepoQuality;
+}
+
 export interface SdkRepo {
   langId: string;
-  owner?: string;
-  repo?: string;
-  branch?: string;
-  status?: string;
-  lastSyncedAt?: string;
-  htmlUrl?: string;
+  staging: SdkRepoTarget;
+  production?: SdkRepoTarget | null;
+  initializedAt?: string;
+  lastVersion?: string | null;
+}
+
+export interface InitializeRepoInput {
+  staging: Pick<SdkRepoTarget, "owner" | "repo" | "branch">;
+  production: Pick<SdkRepoTarget, "owner" | "repo" | "branch">;
 }
 
 export async function listRepos(
@@ -495,7 +524,7 @@ export function initializeRepo(
   client: OctriClient,
   projectId: string,
   langId: string,
-  body: Record<string, unknown> = {},
+  body: InitializeRepoInput,
 ): Promise<unknown> {
   return client.request(
     `/projects/${projectId}/sdk/repos/${langId}/initialize`,

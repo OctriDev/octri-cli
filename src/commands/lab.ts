@@ -10,6 +10,7 @@
  * which is what makes `diff` (and an agent reading the tree) possible later.
  */
 
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -18,14 +19,12 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
 import { join, relative, sep } from "node:path";
 
-import { flagBool, flagList, flagNumber, flagString } from "../args.js";
 import * as api from "../api.js";
+import { extract, safeArtifactFilename } from "../archive.js";
+import { flagBool, flagList, flagNumber, flagString } from "../args.js";
 import { cacheDir } from "../config.js";
-import type { Context } from "../context.js";
-import { extract } from "../archive.js";
 import { bold, dim, green, red, yellow } from "../ui/ansi.js";
 import { panel, rule, tree, treeFromPaths } from "../ui/box.js";
 import {
@@ -42,8 +41,15 @@ import {
   symbols,
   warn,
 } from "../ui/output.js";
-import { Spinner, TaskList, withSpinner, type TaskState } from "../ui/spinner.js";
+import {
+  Spinner,
+  TaskList,
+  withSpinner,
+  type TaskState,
+} from "../ui/spinner.js";
 import { table } from "../ui/table.js";
+
+import type { Context } from "../context.js";
 
 // ─── Run manifest ─────────────────────────────────────────────────────────────
 
@@ -117,7 +123,9 @@ export async function labRun(ctx: Context): Promise<void> {
     const errors = validation.errors ?? [];
     if (errors.length > 0) {
       for (const error of errors.slice(0, 10)) {
-        line(`  ${red(symbols.bullet)} ${error.message} ${dim(error.path ?? "")}`);
+        line(
+          `  ${red(symbols.bullet)} ${error.message} ${dim(error.path ?? "")}`,
+        );
       }
       if (!flagBool(ctx.args, "keep-going")) {
         throw new Error(
@@ -261,19 +269,31 @@ export function labRuns(ctx: Context): void {
     table(
       runs,
       [
-        { header: "build", value: (r) => dim(r.buildId), flex: 8, minWidth: 24 },
+        {
+          header: "build",
+          value: (r) => dim(r.buildId),
+          flex: 8,
+          minWidth: 24,
+        },
         { header: "version", value: (r) => bold(r.buildVersion), flex: 4 },
         { header: "status", value: (r) => statusLabel(r.status), flex: 5 },
         {
           header: "langs",
           value: (r) =>
             r.languages
-              .map((l) => (l.status === "failed" ? red(l.language) : green(l.language)))
+              .map((l) =>
+                l.status === "failed" ? red(l.language) : green(l.language),
+              )
               .join(" "),
           flex: 1,
           minWidth: 18,
         },
-        { header: "took", value: (r) => duration(r.durationMs), align: "right", flex: 6 },
+        {
+          header: "took",
+          value: (r) => duration(r.durationMs),
+          align: "right",
+          flex: 6,
+        },
         { header: "when", value: (r) => relativeTime(r.finishedAt), flex: 5 },
       ],
       { emptyMessage: "No cached runs — `octri lab run --lang go`." },
@@ -304,8 +324,14 @@ export function labFiles(ctx: Context): void {
 
   emit({ buildId, language, root, files }, () => {
     heading(`${language} ${dim(`— ${files.length} files`)}`);
-    tree(treeFromPaths(files.map((f) => ({ path: f.path, detail: bytes(f.size) }))));
-    note(`Read one with: octri lab cat ${buildId} --lang ${language} --file <path>`);
+    tree(
+      treeFromPaths(
+        files.map((f) => ({ path: f.path, detail: bytes(f.size) })),
+      ),
+    );
+    note(
+      `Read one with: octri lab cat ${buildId} --lang ${language} --file <path>`,
+    );
   });
 }
 
@@ -376,14 +402,21 @@ export function labDiff(ctx: Context): void {
       .filter((p) => filesA.has(p) && filesA.get(p) !== filesB.get(p))
       .sort();
 
-    return { language, added, removed, changed, unchanged: filesB.size - added.length - changed.length };
+    return {
+      language,
+      added,
+      removed,
+      changed,
+      unchanged: filesB.size - added.length - changed.length,
+    };
   });
 
   emit({ from: idA, to: idB, languages: report }, () => {
     heading(`Diff ${dim(`${idA.slice(-8)} → ${idB.slice(-8)}`)}`);
 
     for (const entry of report) {
-      const total = entry.added.length + entry.removed.length + entry.changed.length;
+      const total =
+        entry.added.length + entry.removed.length + entry.changed.length;
       line();
       line(
         `  ${bold(entry.language)} ${
@@ -392,10 +425,17 @@ export function labDiff(ctx: Context): void {
             : `${green(`+${entry.added.length}`)} ${red(`-${entry.removed.length}`)} ${yellow(`~${entry.changed.length}`)} ${dim(`${entry.unchanged} unchanged`)}`
         }`,
       );
-      for (const path of entry.added.slice(0, 20)) line(`    ${green("+")} ${path}`);
-      for (const path of entry.removed.slice(0, 20)) line(`    ${red("-")} ${path}`);
-      for (const path of entry.changed.slice(0, 20)) line(`    ${yellow("~")} ${path}`);
-      const hidden = total - Math.min(20, entry.added.length) - Math.min(20, entry.removed.length) - Math.min(20, entry.changed.length);
+      for (const path of entry.added.slice(0, 20))
+        line(`    ${green("+")} ${path}`);
+      for (const path of entry.removed.slice(0, 20))
+        line(`    ${red("-")} ${path}`);
+      for (const path of entry.changed.slice(0, 20))
+        line(`    ${yellow("~")} ${path}`);
+      const hidden =
+        total -
+        Math.min(20, entry.added.length) -
+        Math.min(20, entry.removed.length) -
+        Math.min(20, entry.changed.length);
       if (hidden > 0) note(`    …and ${hidden} more`);
     }
   });
@@ -410,7 +450,8 @@ async function resolveLanguages(ctx: Context): Promise<string[]> {
   }
   const explicit = flagList(ctx.args, "lang");
   if (explicit.length > 0) return explicit;
-  if (ctx.settings.defaultLanguages.length > 0) return ctx.settings.defaultLanguages;
+  if (ctx.settings.defaultLanguages.length > 0)
+    return ctx.settings.defaultLanguages;
 
   throw new Error(
     "Pick languages: --lang go,rust  ·  --all  ·  or `octri config set defaultLanguages go,rust`.",
@@ -423,7 +464,12 @@ async function collectOutcomes(
   projectId: string,
   build: api.Build,
 ): Promise<LanguageOutcome[]> {
-  const artifacts = await api.listArtifacts(ctx.client, projectId, build.id);
+  const artifacts = await api.listArtifacts(
+    ctx.client,
+    projectId,
+    build.id,
+    true,
+  );
   const byLanguage = new Map(artifacts.map((a) => [a.language, a]));
   const destination = runDir(projectId, build.id);
   const outcomes: LanguageOutcome[] = [];
@@ -433,7 +479,9 @@ async function collectOutcomes(
       outcomes.push({
         language: lane.languageId,
         status: lane.status,
-        ...(lane.errorMessage === undefined ? {} : { errorMessage: lane.errorMessage }),
+        ...(lane.errorMessage === undefined
+          ? {}
+          : { errorMessage: lane.errorMessage }),
         files: 0,
         totalBytes: 0,
       });
@@ -459,7 +507,7 @@ async function collectOutcomes(
       const response = await ctx.client.fetchRaw(artifact.url);
       const buffer = Buffer.from(await response.arrayBuffer());
       const target = join(destination, lane.languageId);
-      const files = extract(buffer, target, artifact.url);
+      const files = extract(buffer, target, safeArtifactFilename(artifact.url));
       const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
 
       outcomes.push({
@@ -507,7 +555,12 @@ function renderRunReport(manifest: RunManifest, destination: string): void {
       flex: 4,
     },
     { header: "status", value: (l) => statusLabel(l.status), flex: 5 },
-    { header: "files", value: (l) => String(l.files || ""), align: "right", flex: 6 },
+    {
+      header: "files",
+      value: (l) => String(l.files === 0 ? "" : l.files),
+      align: "right",
+      flex: 6,
+    },
     {
       header: "size",
       value: (l) => (l.totalBytes > 0 ? bytes(l.totalBytes) : dim("—")),
@@ -524,9 +577,14 @@ function renderRunReport(manifest: RunManifest, destination: string): void {
   const failed = manifest.languages.filter((l) => l.status === "failed");
   for (const outcome of failed) {
     line();
-    panel((outcome.errorMessage ?? "No error message returned.").split("\n").slice(0, 14), {
-      title: `${red(outcome.language)} failed`,
-    });
+    panel(
+      (outcome.errorMessage ?? "No error message returned.")
+        .split("\n")
+        .slice(0, 14),
+      {
+        title: `${red(outcome.language)} failed`,
+      },
+    );
   }
 
   line();
@@ -541,7 +599,9 @@ function renderRunReport(manifest: RunManifest, destination: string): void {
     );
   }
   note(`Sources under ${destination}`);
-  note(`Compare with a previous run: octri lab diff <olderBuildId> ${manifest.buildId}`);
+  note(
+    `Compare with a previous run: octri lab diff <olderBuildId> ${manifest.buildId}`,
+  );
 }
 
 /** Recursively lists files under `root` (absolute paths). */
@@ -570,7 +630,11 @@ function fileMap(root: string): Map<string, string> {
 function fingerprint(files: Map<string, string>): string {
   const hash = createHash("sha256");
   for (const path of [...files.keys()].sort()) {
-    hash.update(path).update("\0").update(files.get(path) ?? "").update("\n");
+    hash
+      .update(path)
+      .update("\0")
+      .update(files.get(path) ?? "")
+      .update("\n");
   }
   return hash.digest("hex");
 }

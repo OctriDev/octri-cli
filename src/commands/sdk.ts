@@ -9,11 +9,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { flagBool, flagList, flagNumber, flagString } from "../args.js";
 import * as api from "../api.js";
-import { cacheDir } from "../config.js";
-import type { Context } from "../context.js";
 import { extract } from "../archive.js";
+import { flagBool, flagList, flagNumber, flagString } from "../args.js";
+import { cacheDir } from "../config.js";
 import {
   accent,
   bold,
@@ -41,8 +40,15 @@ import {
   warn,
 } from "../ui/output.js";
 import { sparkline } from "../ui/progress.js";
-import { Spinner, TaskList, withSpinner, type TaskState } from "../ui/spinner.js";
+import {
+  Spinner,
+  TaskList,
+  withSpinner,
+  type TaskState,
+} from "../ui/spinner.js";
 import { table } from "../ui/table.js";
+
+import type { Context } from "../context.js";
 
 // ─── Catalogue ────────────────────────────────────────────────────────────────
 
@@ -59,7 +65,11 @@ export async function sdkLanguages(ctx: Context): Promise<void> {
       {
         header: "preferences",
         value: (l) =>
-          dim(Object.keys(l.preferences ?? {}).slice(0, 6).join(", ")),
+          dim(
+            Object.keys(l.preferences ?? {})
+              .slice(0, 6)
+              .join(", "),
+          ),
         flex: 1,
       },
     ]);
@@ -117,7 +127,10 @@ export async function sdkSettingsSet(ctx: Context): Promise<void> {
   let settings: Record<string, unknown>;
 
   if (file !== undefined) {
-    settings = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    settings = JSON.parse(readFileSync(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
   } else {
     const [key, ...valueParts] = ctx.args.positionals;
     const raw = valueParts.join(" ");
@@ -193,8 +206,7 @@ export async function sdkOperations(ctx: Context): Promise<void> {
  */
 export async function sdkPreview(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
-  const language =
-    flagString(ctx.args, "lang") ?? ctx.args.positionals[0];
+  const language = flagString(ctx.args, "lang") ?? ctx.args.positionals[0];
   if (language === undefined) {
     throw new Error("Usage: octri sdk preview --lang <language>");
   }
@@ -202,7 +214,10 @@ export async function sdkPreview(ctx: Context): Promise<void> {
   const files = await withSpinner(
     `Generating ${bold(language)} preview`,
     () => api.previewSdk(ctx.client, projectId, language),
-    { success: (f) => `Generated ${bold(String(f.length))} files`, frames: "pulse" },
+    {
+      success: (f) => `Generated ${bold(String(f.length))} files`,
+      frames: "pulse",
+    },
   );
 
   const out = flagString(ctx.args, "out");
@@ -229,7 +244,11 @@ export async function sdkPreview(ctx: Context): Promise<void> {
   }
 
   emit(
-    { projectId, language, files: files.map((f) => ({ path: f.path, bytes: f.content.length })) },
+    {
+      projectId,
+      language,
+      files: files.map((f) => ({ path: f.path, bytes: f.content.length })),
+    },
     () => {
       heading(`${language} ${dim(`— ${files.length} files`)}`);
       tree(
@@ -257,7 +276,9 @@ export async function sdkValidate(ctx: Context): Promise<void> {
     if (result.valid && errors.length === 0) {
       success("Spec is valid.");
     } else {
-      line(`${red(symbols.fail)} ${bold(`${errors.length} validation errors`)}`);
+      line(
+        `${red(symbols.fail)} ${bold(`${errors.length} validation errors`)}`,
+      );
     }
 
     if (result.summary !== undefined) {
@@ -268,7 +289,9 @@ export async function sdkValidate(ctx: Context): Promise<void> {
       );
     }
     for (const error of errors.slice(0, 25)) {
-      line(`  ${red(symbols.bullet)} ${error.message} ${dim(error.path ?? "")}`);
+      line(
+        `  ${red(symbols.bullet)} ${error.message} ${dim(error.path ?? "")}`,
+      );
     }
     if (errors.length > 25) note(`…and ${errors.length - 25} more.`);
     for (const w of warnings.slice(0, 10)) {
@@ -285,7 +308,7 @@ export async function sdkAudit(ctx: Context): Promise<void> {
 
   emit(result, () => {
     heading("SDK audit");
-    const findings = (result["findings"] ?? result["issues"]) as
+    const findings = (result.findings ?? result.issues) as
       | { severity?: string; message?: string; path?: string }[]
       | undefined;
 
@@ -301,7 +324,12 @@ export async function sdkAudit(ctx: Context): Promise<void> {
         value: (f) => statusLabel(f.severity ?? "info"),
         flex: 5,
       },
-      { header: "finding", value: (f) => f.message ?? "", flex: 1, minWidth: 24 },
+      {
+        header: "finding",
+        value: (f) => f.message ?? "",
+        flex: 1,
+        minWidth: 24,
+      },
       { header: "where", value: (f) => dim(f.path ?? ""), flex: 3 },
     ]);
   });
@@ -344,7 +372,7 @@ export async function sdkBuild(ctx: Context): Promise<void> {
   );
 
   const shouldWatch =
-    ctx.args.flags["watch"] !== false && !flagBool(ctx.args, "detach");
+    ctx.args.flags.watch !== false && !flagBool(ctx.args, "detach");
 
   if (!shouldWatch) {
     emit({ buildId: trigger.buildId, languages }, () =>
@@ -356,7 +384,12 @@ export async function sdkBuild(ctx: Context): Promise<void> {
   const build = await followBuild(ctx, projectId, trigger.buildId, languages);
 
   if (flagBool(ctx.args, "download") && build.status !== "failed") {
-    await downloadArtifacts(ctx, projectId, build.id, flagList(ctx.args, "lang"));
+    await downloadArtifacts(
+      ctx,
+      projectId,
+      build.id,
+      flagList(ctx.args, "lang"),
+    );
   }
 
   emit(build, () => undefined);
@@ -396,24 +429,21 @@ export async function sdkBuilds(ctx: Context): Promise<void> {
 export async function sdkWatch(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const buildId = ctx.args.positionals[0];
-  if (buildId === undefined) throw new Error("Usage: octri sdk watch <buildId>");
+  if (buildId === undefined)
+    throw new Error("Usage: octri sdk watch <buildId>");
 
   const existing = await api.findBuild(ctx.client, projectId, buildId);
   if (existing === undefined) throw new Error(`Build ${buildId} not found.`);
 
-  const build = await followBuild(
-    ctx,
-    projectId,
-    buildId,
-    existing.languages,
-  );
+  const build = await followBuild(ctx, projectId, buildId, existing.languages);
   emit(build, () => undefined);
   if (build.status === "failed") process.exitCode = 1;
 }
 
 export async function sdkArtifacts(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
-  const buildId = ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
+  const buildId =
+    ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
   const artifacts = await withSpinner("Loading artifacts", () =>
     api.listArtifacts(ctx.client, projectId, buildId),
   );
@@ -425,10 +455,18 @@ export async function sdkArtifacts(ctx: Context): Promise<void> {
       [
         { header: "language", value: (a) => bold(a.language), flex: 4 },
         { header: "version", value: (a) => a.version, flex: 5 },
-        { header: "size", value: (a) => bytes(a.fileSizeBytes), align: "right", flex: 6 },
+        {
+          header: "size",
+          value: (a) => bytes(a.fileSizeBytes),
+          align: "right",
+          flex: 6,
+        },
         {
           header: "publish",
-          value: (a) => (a.publishStatus === undefined ? dim("—") : statusLabel(a.publishStatus)),
+          value: (a) =>
+            a.publishStatus === undefined
+              ? dim("—")
+              : statusLabel(a.publishStatus),
           flex: 5,
         },
         {
@@ -450,23 +488,28 @@ export async function sdkArtifacts(ctx: Context): Promise<void> {
  */
 export async function sdkDownload(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
-  const buildId = ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
+  const buildId =
+    ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
   await downloadArtifacts(ctx, projectId, buildId, flagList(ctx.args, "lang"));
 }
 
 export async function sdkRetry(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
-  const buildId = ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
+  const buildId =
+    ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
 
   let languages = flagList(ctx.args, "lang");
   if (languages.length === 0) {
     // Default to exactly the languages that failed — the usual intent.
     const build = await api.findBuild(ctx.client, projectId, buildId);
     languages =
-      build?.artifacts.filter((a) => a.status === "failed").map((a) => a.languageId) ??
-      [];
+      build?.artifacts
+        .filter((a) => a.status === "failed")
+        .map((a) => a.languageId) ?? [];
     if (languages.length === 0) {
-      throw new Error("Nothing failed on that build. Pass --lang to force a retry.");
+      throw new Error(
+        "Nothing failed on that build. Pass --lang to force a retry.",
+      );
     }
   }
 
@@ -474,7 +517,7 @@ export async function sdkRetry(ctx: Context): Promise<void> {
     api.retryBuild(ctx.client, projectId, buildId, languages),
   );
 
-  if (ctx.args.flags["watch"] !== false) {
+  if (ctx.args.flags.watch !== false) {
     const build = await followBuild(ctx, projectId, buildId, languages);
     emit(build, () => undefined);
     if (build.status === "failed") process.exitCode = 1;
@@ -485,7 +528,8 @@ export async function sdkRetry(ctx: Context): Promise<void> {
 
 export async function sdkPublish(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
-  const buildId = ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
+  const buildId =
+    ctx.args.positionals[0] ?? (await latestBuildId(ctx, projectId));
   const languages = flagList(ctx.args, "lang");
   const mode = flagString(ctx.args, "mode") === "pack" ? "pack" : "release";
 
@@ -511,6 +555,20 @@ export async function sdkPublish(ctx: Context): Promise<void> {
 
 // ─── Repos ────────────────────────────────────────────────────────────────────
 
+export function sdkRepoDisplay(repo: api.SdkRepo): {
+  repo: string;
+  branch: string;
+  status: string;
+  syncedAt: string | undefined;
+} {
+  return {
+    repo: `${repo.staging.owner}/${repo.staging.repo}`,
+    branch: repo.staging.branch,
+    status: repo.staging.quality?.state ?? "linked",
+    syncedAt: repo.staging.stagedAt ?? repo.initializedAt,
+  };
+}
+
 export async function sdkRepos(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const repos = await withSpinner("Loading SDK repos", () =>
@@ -525,23 +583,81 @@ export async function sdkRepos(ctx: Context): Promise<void> {
         { header: "lang", value: (r) => bold(r.langId), flex: 5 },
         {
           header: "repo",
-          value: (r) =>
-            r.owner === undefined ? dim("—") : `${r.owner}/${r.repo ?? ""}`,
+          value: (r) => sdkRepoDisplay(r).repo,
           flex: 1,
           minWidth: 18,
         },
-        { header: "branch", value: (r) => dim(r.branch ?? "—"), flex: 5 },
         {
-          header: "status",
-          value: (r) => statusLabel(r.status ?? "unlinked"),
+          header: "branch",
+          value: (r) => dim(sdkRepoDisplay(r).branch),
           flex: 5,
         },
-        { header: "synced", value: (r) => relativeTime(r.lastSyncedAt), flex: 5 },
+        {
+          header: "status",
+          value: (r) => statusLabel(sdkRepoDisplay(r).status),
+          flex: 5,
+        },
+        {
+          header: "synced",
+          value: (r) => relativeTime(sdkRepoDisplay(r).syncedAt),
+          flex: 5,
+        },
       ],
       { emptyMessage: "No per-language repositories linked." },
     );
   });
 }
+
+export async function sdkReposInit(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const language = ctx.args.positionals[0] ?? flagString(ctx.args, "lang");
+  const stagingOwner = flagString(ctx.args, "staging-owner");
+  const stagingRepo = flagString(ctx.args, "staging-repo");
+  const stagingBranch = flagString(ctx.args, "staging-branch");
+  const productionOwner = flagString(ctx.args, "production-owner");
+  const productionRepo = flagString(ctx.args, "production-repo");
+  const productionBranch = flagString(ctx.args, "production-branch");
+
+  if (
+    language === undefined ||
+    stagingOwner === undefined ||
+    stagingRepo === undefined ||
+    stagingBranch === undefined ||
+    productionOwner === undefined ||
+    productionRepo === undefined ||
+    productionBranch === undefined
+  ) {
+    throw new Error(
+      "Usage: octri sdk repos init <language> --staging-owner <owner> --staging-repo <repo> --staging-branch <branch> --production-owner <owner> --production-repo <repo> --production-branch <branch>",
+    );
+  }
+
+  const result = await withSpinner(
+    `Initializing ${bold(language)} repository`,
+    () =>
+      api.initializeRepo(ctx.client, projectId, language, {
+        staging: {
+          owner: stagingOwner,
+          repo: stagingRepo,
+          branch: stagingBranch,
+        },
+        production: {
+          owner: productionOwner,
+          repo: productionRepo,
+          branch: productionBranch,
+        },
+      }),
+    { success: () => `${bold(language)} repository initialized` },
+  );
+
+  emit({ projectId, language, result }, () =>
+    success(
+      `${bold(language)} now stages to ${stagingOwner}/${stagingRepo}:${stagingBranch}.`,
+    ),
+  );
+}
+
+// ─── Shared internals ─────────────────────────────────────────────────────────
 
 // ─── Shared internals ─────────────────────────────────────────────────────────
 
@@ -601,11 +717,15 @@ async function followBuild(
     );
     for (const artifact of failed) {
       panel(
-        (artifact.errorMessage ?? "No error message returned.").split("\n").slice(0, 12),
+        (artifact.errorMessage ?? "No error message returned.")
+          .split("\n")
+          .slice(0, 12),
         { title: `${red(artifact.languageId)} failed` },
       );
     }
-    note(`Retry just those: octri sdk retry ${buildId} --lang ${failed.map((f) => f.languageId).join(",")}`);
+    note(
+      `Retry just those: octri sdk retry ${buildId} --lang ${failed.map((f) => f.languageId).join(",")}`,
+    );
   }
 
   return latest ?? build;
@@ -618,7 +738,12 @@ async function downloadArtifacts(
   buildId: string,
   onlyLanguages: readonly string[],
 ): Promise<void> {
-  const artifacts = await api.listArtifacts(ctx.client, projectId, buildId);
+  const artifacts = await api.listArtifacts(
+    ctx.client,
+    projectId,
+    buildId,
+    true,
+  );
   const wanted =
     onlyLanguages.length === 0
       ? artifacts
@@ -632,12 +757,14 @@ async function downloadArtifacts(
   const root =
     flagString(ctx.args, "out") ?? join(cacheDir(), "builds", buildId);
   mkdirSync(root, { recursive: true });
-  const shouldExtract = ctx.args.flags["extract"] !== false;
+  const shouldExtract = ctx.args.flags.extract !== false;
   const written: { language: string; path: string; files: number }[] = [];
 
   for (const artifact of wanted) {
     if (artifact.url === undefined) {
-      warn(`${artifact.language}: no download URL (build may still be running).`);
+      warn(
+        `${artifact.language}: no download URL (build may still be running).`,
+      );
       continue;
     }
 
@@ -653,7 +780,11 @@ async function downloadArtifacts(
 
     if (!shouldExtract) {
       spinner.succeed(`${artifact.language} ${dim(archivePath)}`);
-      written.push({ language: artifact.language, path: archivePath, files: 0 });
+      written.push({
+        language: artifact.language,
+        path: archivePath,
+        files: 0,
+      });
       continue;
     }
 
@@ -672,7 +803,11 @@ async function downloadArtifacts(
       spinner.warnWith(
         `${artifact.language}: saved archive, could not extract (${(err as Error).message})`,
       );
-      written.push({ language: artifact.language, path: archivePath, files: 0 });
+      written.push({
+        language: artifact.language,
+        path: archivePath,
+        files: 0,
+      });
     }
   }
 
@@ -682,10 +817,7 @@ async function downloadArtifacts(
   });
 }
 
-async function latestBuildId(
-  ctx: Context,
-  projectId: string,
-): Promise<string> {
+async function latestBuildId(ctx: Context, projectId: string): Promise<string> {
   const result = await api.listBuilds(ctx.client, projectId, 1);
   const latest = result.builds[0];
   if (latest === undefined) throw new Error("This project has no builds yet.");
@@ -704,7 +836,8 @@ function laneDetail(
   startedAt: number,
 ): string {
   if (artifact.status === "failed") {
-    const first = (artifact.errorMessage ?? "failed").split("\n")[0] ?? "failed";
+    const first =
+      (artifact.errorMessage ?? "failed").split("\n")[0] ?? "failed";
     return first.slice(0, 72);
   }
   if (artifact.status === "ready" || artifact.status === "verified") {
@@ -746,9 +879,15 @@ function renderValue(value: unknown): string {
   if (typeof value === "boolean") return value ? green("true") : dim("false");
   if (typeof value === "object") {
     const json = JSON.stringify(value);
+    if (json === undefined) return dim("—");
     return dim(json.length > 72 ? `${json.slice(0, 71)}…` : json);
   }
-  return String(value);
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "symbol") return value.description ?? "Symbol";
+  return dim("—");
 }
 
 /** Reads `a.b.c` out of a nested object. */
@@ -765,12 +904,18 @@ function dig(source: Record<string, unknown>, path: string): unknown {
 }
 
 /** Writes `a.b.c`, creating intermediate objects. */
-function assign(target: Record<string, unknown>, path: string, value: unknown): void {
+function assign(
+  target: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): void {
   const keys = path.split(".");
-  const last = keys.pop() as string;
+  const last = keys.pop();
+  if (last === undefined) return;
   let cursor = target;
   for (const key of keys) {
-    if (typeof cursor[key] !== "object" || cursor[key] === null) cursor[key] = {};
+    if (typeof cursor[key] !== "object" || cursor[key] === null)
+      cursor[key] = {};
     cursor = cursor[key] as Record<string, unknown>;
   }
   cursor[last] = value;
@@ -841,12 +986,16 @@ export async function sdkStats(ctx: Context): Promise<void> {
       ]);
       if (!isStatic()) {
         line();
-        line(`  ${dim("trend")}  ${sparkline(trend)} ${dim("(oldest → newest)")}`);
+        line(
+          `  ${dim("trend")}  ${sparkline(trend)} ${dim("(oldest → newest)")}`,
+        );
       }
       if (langFailures.size > 0) {
         line();
         line(dim("  failures by language"));
-        for (const [lang, count] of [...langFailures].sort((a, b) => b[1] - a[1])) {
+        for (const [lang, count] of [...langFailures].sort(
+          (a, b) => b[1] - a[1],
+        )) {
           line(`    ${red(symbols.bullet)} ${lang.padEnd(8)} ${count}`);
         }
       }

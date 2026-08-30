@@ -33,7 +33,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import * as api from "../api.js";
-import { extract } from "../archive.js";
+import { extract, safeArtifactFilename } from "../archive.js";
 import { OctriClient } from "../client.js";
 import { cacheDir, resolve, type Resolved } from "../config.js";
 
@@ -136,7 +136,8 @@ function tools(options: ServeOptions): Tool[] {
         {
           settings: {
             type: "object",
-            description: "Complete sdkSettings object — replaces the stored one.",
+            description:
+              "Complete sdkSettings object — replaces the stored one.",
           },
           revision: {
             type: "number",
@@ -168,7 +169,8 @@ function tools(options: ServeOptions): Tool[] {
           },
           path_filter: {
             type: "string",
-            description: "Only return files whose path contains this substring.",
+            description:
+              "Only return files whose path contains this substring.",
           },
         },
         ["language"],
@@ -183,7 +185,7 @@ function tools(options: ServeOptions): Tool[] {
           languages: {
             type: "array",
             items: { type: "string" },
-            description: "Language ids, e.g. [\"go\",\"rust\"].",
+            description: 'Language ids, e.g. ["go","rust"].',
           },
           version: { type: "string" },
         },
@@ -300,7 +302,8 @@ function tools(options: ServeOptions): Tool[] {
     },
     {
       name: "octri_list_sdk_repos",
-      description: "Per-language GitHub repositories linked to the project's SDKs.",
+      description:
+        "Per-language GitHub repositories linked to the project's SDKs.",
       inputSchema: schema({}),
     },
   ];
@@ -337,7 +340,7 @@ function tools(options: ServeOptions): Tool[] {
 type Args = Record<string, unknown>;
 
 function projectOf(ctx: ToolContext, args: Args): string {
-  const explicit = args["project_id"];
+  const explicit = args.project_id;
   return ctx.client.requireProject(
     typeof explicit === "string" ? explicit : undefined,
   );
@@ -421,13 +424,15 @@ async function dispatch(
       return api.getSdkSettings(client, projectOf(ctx, args));
 
     case "octri_set_sdk_settings": {
-      const settings = args["settings"];
-      const revision = args["revision"];
+      const settings = args.settings;
+      const revision = args.revision;
       if (typeof settings !== "object" || settings === null) {
         throw new Error("`settings` must be an object.");
       }
       if (typeof revision !== "number") {
-        throw new Error("`revision` must be the number read from octri_get_sdk_settings.");
+        throw new Error(
+          "`revision` must be the number read from octri_get_sdk_settings.",
+        );
       }
       const projectId = projectOf(ctx, args);
       const current = await api.getSdkSettings(client, projectId);
@@ -435,9 +440,9 @@ async function dispatch(
         settings: settings as Record<string, unknown>,
         endpoints: current.sdkEndpoints,
         revision,
-        ...(typeof args["version"] === "string" ? { version: args["version"] } : {}),
-        ...(typeof args["changelog"] === "string"
-          ? { changelog: args["changelog"] }
+        ...(typeof args.version === "string" ? { version: args.version } : {}),
+        ...(typeof args.changelog === "string"
+          ? { changelog: args.changelog }
           : {}),
       });
       return { ok: true, revision: revision + 1 };
@@ -452,12 +457,12 @@ async function dispatch(
         projectOf(ctx, args),
         stringArg(args, "language"),
       );
-      const filter = args["path_filter"];
+      const filter = args.path_filter;
       const selected =
         typeof filter === "string"
           ? files.filter((f) => f.path.includes(filter))
           : files;
-      const includeContent = args["include_content"] === true;
+      const includeContent = args.include_content === true;
       return {
         count: selected.length,
         files: selected.map((f) => ({
@@ -470,15 +475,16 @@ async function dispatch(
 
     case "octri_trigger_build": {
       const languages = stringList(args, "languages");
-      if (languages.length === 0) throw new Error("`languages` must be a non-empty array.");
+      if (languages.length === 0)
+        throw new Error("`languages` must be a non-empty array.");
       return api.triggerBuild(client, projectOf(ctx, args), {
         languages,
-        ...(typeof args["version"] === "string" ? { version: args["version"] } : {}),
+        ...(typeof args.version === "string" ? { version: args.version } : {}),
       });
     }
 
     case "octri_list_builds": {
-      const page = typeof args["page"] === "number" ? args["page"] : 1;
+      const page = typeof args.page === "number" ? args.page : 1;
       return api.listBuilds(client, projectOf(ctx, args), page);
     }
 
@@ -488,14 +494,15 @@ async function dispatch(
         projectOf(ctx, args),
         stringArg(args, "build_id"),
       );
-      if (build === undefined) throw new Error("Build not found on this project.");
+      if (build === undefined)
+        throw new Error("Build not found on this project.");
       return build;
     }
 
     case "octri_wait_for_build": {
       const timeout =
-        typeof args["timeout_seconds"] === "number"
-          ? args["timeout_seconds"] * 1_000
+        typeof args.timeout_seconds === "number"
+          ? args.timeout_seconds * 1_000
           : 30 * 60_000;
       return api.watchBuild(
         client,
@@ -516,7 +523,9 @@ async function dispatch(
             .filter((a) => a.status === "failed")
             .map((a) => a.languageId) ?? [];
         if (languages.length === 0) {
-          throw new Error("Nothing failed on that build; pass `languages` explicitly.");
+          throw new Error(
+            "Nothing failed on that build; pass `languages` explicitly.",
+          );
         }
       }
       await api.retryBuild(client, projectId, buildId, languages);
@@ -560,10 +569,11 @@ async function dispatch(
         const rel = relative(root, path).split(sep).join("/");
         return rel === wanted || rel.endsWith(`/${wanted}`);
       });
-      if (match === undefined) throw new Error(`No generated file at "${wanted}".`);
+      if (match === undefined)
+        throw new Error(`No generated file at "${wanted}".`);
 
       const limit =
-        typeof args["max_bytes"] === "number" ? args["max_bytes"] : 200_000;
+        typeof args.max_bytes === "number" ? args.max_bytes : 200_000;
       const content = readFileSync(match, "utf8");
       return {
         path: relative(root, match).split(sep).join("/"),
@@ -578,7 +588,7 @@ async function dispatch(
         projectOf(ctx, args),
         stringArg(args, "from_build_id"),
         stringArg(args, "to_build_id"),
-        typeof args["language"] === "string" ? args["language"] : undefined,
+        typeof args.language === "string" ? args.language : undefined,
       );
 
     case "octri_list_doc_pages":
@@ -599,9 +609,11 @@ async function dispatch(
 
     case "octri_publish_build": {
       if (!ctx.options.allowPublish) {
-        throw new Error("Publishing is disabled. Restart with --allow-publish.");
+        throw new Error(
+          "Publishing is disabled. Restart with --allow-publish.",
+        );
       }
-      const mode = args["mode"] === "release" ? "release" : "pack";
+      const mode = args.mode === "release" ? "release" : "pack";
       const languages = stringList(args, "languages");
       return api.publishBuild(
         client,
@@ -648,7 +660,12 @@ async function fetchArtifacts(
   buildId: string,
   languages: readonly string[],
 ): Promise<unknown> {
-  const artifacts = await api.listArtifacts(ctx.client, projectId, buildId);
+  const artifacts = await api.listArtifacts(
+    ctx.client,
+    projectId,
+    buildId,
+    true,
+  );
   const wanted =
     languages.length === 0
       ? artifacts
@@ -672,9 +689,11 @@ async function fetchArtifacts(
     const target = join(destination, artifact.language);
 
     try {
-      const files = extract(buffer, target, artifact.url);
+      const files = extract(buffer, target, safeArtifactFilename(artifact.url));
       const hash = createHash("sha256");
-      for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+      for (const file of [...files].sort((a, b) =>
+        a.path.localeCompare(b.path),
+      )) {
         hash.update(file.path).update("\0");
         hash.update(readFileSync(join(target, file.path)));
       }

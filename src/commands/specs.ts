@@ -6,9 +6,8 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
-import { flagBool, flagString } from "../args.js";
 import * as api from "../api.js";
-import type { Context } from "../context.js";
+import { flagBool, flagString } from "../args.js";
 import { bold, dim, green } from "../ui/ansi.js";
 import {
   bytes,
@@ -23,6 +22,8 @@ import {
 } from "../ui/output.js";
 import { Spinner, withSpinner } from "../ui/spinner.js";
 import { table } from "../ui/table.js";
+
+import type { Context } from "../context.js";
 
 export async function specsList(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
@@ -73,25 +74,23 @@ export async function specsPush(ctx: Context): Promise<void> {
   }
 
   const content =
-    source === "-"
-      ? readFileSync(0, "utf8")
-      : readFileSync(source, "utf8");
+    source === "-" ? readFileSync(0, "utf8") : readFileSync(source, "utf8");
 
   const label = source === "-" ? "stdin" : basename(source);
   const result = await withSpinner(
     `Uploading ${bold(label)} ${dim(bytes(Buffer.byteLength(content)))}`,
     () => api.uploadSpecContent(ctx.client, projectId, content),
-    { success: (r) => `Spec ${bold(r.spec.version)} ingested` },
+    { success: (r) => `Spec ${bold(r.version)} ingested` },
   );
 
-  if (ctx.args.flags["wait"] !== false) {
-    await followIngestion(ctx, projectId, result.spec.id);
+  if (ctx.args.flags.wait !== false) {
+    await followIngestion(ctx, projectId, result.specId);
   }
 
-  emit({ projectId, spec: result.spec }, () => {
+  emit({ projectId, ...result }, () => {
     keyValues([
-      ["spec", result.spec.id],
-      ["version", result.spec.version],
+      ["spec", result.specId],
+      ["version", result.version],
     ]);
   });
 }
@@ -105,19 +104,20 @@ export async function specsImport(ctx: Context): Promise<void> {
   const result = await withSpinner(
     `Fetching ${dim(url)}`,
     () => api.importSpecUrl(ctx.client, projectId, url),
-    { success: (r) => `Spec ${bold(r.spec.version)} ingested` },
+    { success: (r) => `Spec ${bold(r.version)} ingested` },
   );
 
-  if (ctx.args.flags["wait"] !== false) {
-    await followIngestion(ctx, projectId, result.spec.id);
+  if (ctx.args.flags.wait !== false) {
+    await followIngestion(ctx, projectId, result.specId);
   }
-  emit({ projectId, spec: result.spec }, () => undefined);
+  emit({ projectId, ...result }, () => undefined);
 }
 
 export async function specsStatus(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const specId = ctx.args.positionals[0];
-  if (specId === undefined) throw new Error("Usage: octri specs status <specId>");
+  if (specId === undefined)
+    throw new Error("Usage: octri specs status <specId>");
 
   const status = await api.specStatus(ctx.client, projectId, specId);
   emit(status, () => {
@@ -133,7 +133,8 @@ export async function specsStatus(ctx: Context): Promise<void> {
 export async function specsDelete(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const specId = ctx.args.positionals[0];
-  if (specId === undefined) throw new Error("Usage: octri specs delete <specId>");
+  if (specId === undefined)
+    throw new Error("Usage: octri specs delete <specId>");
 
   if (!flagBool(ctx.args, "yes")) {
     warn("Deleting a spec is irreversible. Re-run with --yes to confirm.");
@@ -171,18 +172,24 @@ async function followIngestion(
       continue;
     }
 
-    const state = String(status["status"] ?? status["state"] ?? "");
-    const progress = status["progress"];
+    const rawState = status.status ?? status.state;
+    const state = typeof rawState === "string" ? rawState : "";
+    const progress = status.progress;
     spinner.update(
       `Parsing spec ${dim(state)}${typeof progress === "number" ? dim(` ${progress}%`) : ""}`,
     );
 
     if (state === "failed" || state === "error") {
-      spinner.failWith(`Spec ingestion failed: ${String(status["error"] ?? state)}`);
+      const error = status.error;
+      spinner.failWith(
+        `Spec ingestion failed: ${typeof error === "string" ? error : state}`,
+      );
       return;
     }
     if (state === "ready" || state === "completed" || state === "current") {
-      spinner.succeed(`Spec ready ${dim(`in ${Math.round(spinner.elapsed() / 1000)}s`)}`);
+      spinner.succeed(
+        `Spec ready ${dim(`in ${Math.round(spinner.elapsed() / 1000)}s`)}`,
+      );
       return;
     }
   }

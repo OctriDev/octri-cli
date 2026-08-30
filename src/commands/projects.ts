@@ -2,10 +2,9 @@
  * `octri projects …` — list, inspect, create, and pick the working project.
  */
 
-import { flagString } from "../args.js";
 import * as api from "../api.js";
+import { flagString } from "../args.js";
 import { updateProfile } from "../config.js";
-import type { Context } from "../context.js";
 import { accent, bold, dim, gray, green } from "../ui/ansi.js";
 import {
   emit,
@@ -18,6 +17,8 @@ import {
 import * as prompt from "../ui/prompt.js";
 import { withSpinner } from "../ui/spinner.js";
 import { table } from "../ui/table.js";
+
+import type { Context } from "../context.js";
 
 export async function projectsList(ctx: Context): Promise<void> {
   const projects = await withSpinner("Loading projects", () =>
@@ -71,8 +72,9 @@ export async function projectsShow(ctx: Context): Promise<void> {
 }
 
 export async function projectsCreate(ctx: Context): Promise<void> {
+  const positionalName = ctx.args.positionals.join(" ");
   const name =
-    ctx.args.positionals.join(" ") || (await prompt.text("Project name"));
+    positionalName === "" ? await prompt.text("Project name") : positionalName;
   if (name === "") throw new Error("Usage: octri projects create <name>");
 
   const description = flagString(ctx.args, "description");
@@ -84,7 +86,7 @@ export async function projectsCreate(ctx: Context): Promise<void> {
   );
 
   // A freshly created project is almost always the one you want to work on.
-  updateProfile({ defaultProject: project.id });
+  updateProfile({ defaultProject: project.id }, ctx.settings.profile);
 
   emit(project, () => {
     success(`Created ${bold(project.name)} ${dim(project.id)}`);
@@ -108,7 +110,7 @@ export async function projectsUse(ctx: Context): Promise<void> {
 
   // Fail loudly on a typo'd id rather than storing an unusable default.
   const project = await api.getProject(ctx.client, id);
-  updateProfile({ defaultProject: project.id });
+  updateProfile({ defaultProject: project.id }, ctx.settings.profile);
 
   emit({ project: project.id, name: project.name }, () =>
     success(`Working project: ${bold(project.name)} ${dim(project.id)}`),
