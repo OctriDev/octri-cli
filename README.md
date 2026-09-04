@@ -4,7 +4,8 @@
 work production errors from a terminal, with an MCP server that hands an AI
 agent the same commands.** Push a spec, trigger an SDK build across ten
 languages, watch every lane live, publish a docs version, upload source maps
-from CI, then triage the issues those SDKs report back.
+from CI, then triage the issues those SDKs report back — one binary for the
+whole loop.
 
 Octri turns an OpenAPI spec into a documentation site, client SDKs for ten
 languages, an MCP server your AI assistant can call, and monitoring for the
@@ -173,17 +174,21 @@ octri mcp serve --allow-delete    # deleting specs
 Tool failures are returned as tool results, not protocol errors, so an agent can
 read the message and correct itself.
 
-## Monitoring, and the CLI it replaces
+## Monitoring
 
-`octri monitoring` was a second binary, `octri-monitoring`, published as
-`@octri/monitoring-cli`. It is one CLI now. That package still exists and still
-works, so pipelines pinned to it keep running, but it holds no code of its own:
-it prints a deprecation notice and forwards straight into this router.
+Reads and triage go through the dashboard API using your session, so they need
+nothing but a login:
 
-Reads and triage go through the dashboard API using your session. The two upload
-commands are different, deliberately: they POST at the monitoring service with
-the project's ingest token, because a CI job has one secret and no interactive
-login.
+```bash
+octri monitoring summary
+octri monitoring issues --status unresolved
+octri monitoring issue <id>          # stack, with resolved frames marked
+octri monitoring resolve <id>
+```
+
+The two upload commands work differently, deliberately. They POST at the
+monitoring service with the project's ingest token, because a CI job has one
+secret and no interactive login:
 
 ```bash
 # CI: three values, no login
@@ -191,7 +196,7 @@ octri monitoring sourcemaps upload ./dist \
   --url "$MONITORING_URL" --token "$MONITORING_TOKEN" \
   --environment "$MONITORING_ENVIRONMENT" --release "$GIT_SHA"
 
-# Laptop: signed in, connection resolved for you
+# Laptop: signed in, connection resolved from the selected project
 octri monitoring sourcemaps upload ./dist
 ```
 
