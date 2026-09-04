@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * `octri` entry point. The routing lives in `./run.js` so the deprecated
- * `octri-monitoring` binary can reuse it verbatim.
+ * `octri` entry point. The routing lives in `./run.js` so it stays importable.
  */
 
 import { report, run } from "./run.js";

@@ -1,6 +1,5 @@
 /**
- * `octri monitoring …` — the monitoring product, folded in from the separate
- * `@octri/monitoring-cli` binary.
+ * `octri monitoring …` — the monitoring product.
  *
  * Two transports live behind this one group, deliberately:
  *

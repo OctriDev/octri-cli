@@ -7,9 +7,6 @@
  * one secret and no interactive login. `octri monitoring sourcemaps upload`
  * resolves that connection for you when you are signed in; passing --url/--token
  * /--environment skips the API entirely, which is the shape CI usually wants.
- *
- * Previously published as `@octri/monitoring-cli`, folded in here so one binary
- * covers the whole product.
  */
 
 import { execFileSync } from "node:child_process";

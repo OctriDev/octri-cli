@@ -5,9 +5,8 @@
  * banner, and every error funnels through one handler that knows how to turn an
  * API failure into an actionable sentence.
  *
- * `run` takes argv rather than reading `process.argv`, which is what lets the
- * deprecated `octri-monitoring` binary forward into `octri monitoring …` instead
- * of shipping a second implementation of the same commands.
+ * `run` takes argv rather than reading `process.argv` so anything embedding the
+ * CLI can drive it without touching process state.
  */
 
 import { flagBool, flagString, parse } from "./args.js";
