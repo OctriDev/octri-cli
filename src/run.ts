@@ -9,6 +9,8 @@
  * CLI can drive it without touching process state.
  */
 
+import { readFileSync } from "node:fs";
+
 import { flagBool, flagString, parse } from "./args.js";
 import { ApiError, NotAuthenticatedError } from "./client.js";
 import * as auth from "./commands/auth.js";
@@ -29,7 +31,22 @@ import { cursor, dim } from "./ui/ansi.js";
 import { write, configureOutput, fail, line, note } from "./ui/output.js";
 import { NonInteractiveError } from "./ui/prompt.js";
 
-const VERSION = "0.1.0";
+/**
+ * Read from the manifest rather than duplicated here, so `octri --version` and
+ * the published version can never disagree. npm always ships package.json, and
+ * `dist/run.js` sits one directory below it.
+ */
+function version(): string {
+  try {
+    const manifest = readFileSync(
+      new URL("../package.json", import.meta.url),
+      "utf8",
+    );
+    return (JSON.parse(manifest) as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 type Handler = (ctx: Context) => void | Promise<void>;
 
@@ -302,7 +319,7 @@ export async function run(argv: readonly string[]): Promise<void> {
   });
 
   if (flagBool(args, "version")) {
-    process.stdout.write(`${VERSION}\n`);
+    process.stdout.write(`${version()}\n`);
     return;
   }
 

@@ -1,12 +1,16 @@
 {
   "name": "@octri/cli",
-  "version": "1.0.0",
-  "description": "Octri command line — drive projects, specs, docs and the SDK generator from a terminal, plus an MCP server that exposes the same surface to AI agents.",
+  "version": "1.0.1",
+  "description": "Command line for Octri. Push OpenAPI specs, build SDKs in ten languages, publish docs, and triage the errors those SDKs report from production. Ships an MCP server so an AI assistant can run the same commands.",
   "keywords": [
     "octri",
     "cli",
-    "sdk-generator",
     "openapi",
+    "swagger",
+    "sdk-generator",
+    "api-documentation",
+    "source-maps",
+    "error-monitoring",
     "mcp",
     "model-context-protocol"
   ],
