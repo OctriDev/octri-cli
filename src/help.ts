@@ -79,6 +79,10 @@ const GROUPS: Group[] = [
         description: "Validate the spec through the generator",
       },
       {
+        usage: "sdk audit",
+        description: "Spec-quality score (apply · ignore a finding)",
+      },
+      {
         usage: "sdk preview --lang go",
         description: "Generate one language, no build spent",
       },
@@ -147,10 +151,63 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    title: "Monitoring",
+    entries: [
+      { usage: "monitoring status", description: "Connection, environment, ingest URL" },
+      { usage: "monitoring enable", description: "Turn monitoring on for the project" },
+      {
+        usage: "monitoring summary",
+        description: "Events, errors, error rate (--range 24h)",
+      },
+      {
+        usage: "monitoring issues",
+        description: "Grouped errors (--status, --level, --q)",
+      },
+      { usage: "monitoring issue <id>", description: "One issue with its stack" },
+      {
+        usage: "monitoring resolve <id>",
+        description: "Triage: also ignore · reopen · comment",
+      },
+      { usage: "monitoring logs", description: "Raw event query (--level, --q)" },
+      { usage: "monitoring traces", description: "Recent traces, or one by id" },
+      { usage: "monitoring performance", description: "Slow transactions + N+1" },
+      { usage: "monitoring releases", description: "Error rate per release" },
+      { usage: "monitoring alerts", description: "Rules (create · delete · evaluate)" },
+      { usage: "monitoring checks", description: "Synthetics (run · generate)" },
+      {
+        usage: "monitoring sourcemaps upload",
+        description: "Upload *.map for JS/Dart stacks",
+      },
+      {
+        usage: "monitoring sources upload",
+        description: "Upload source for Go/Rust/JVM/Swift",
+      },
+      { usage: "monitoring config", description: "The three CI values, for pasting" },
+    ],
+  },
+  {
     title: "Docs & agents",
     entries: [
       { usage: "docs pages", description: "Generated documentation pages" },
       { usage: "docs show <slug>", description: "One page" },
+      {
+        usage: "docs pages generate",
+        description: "Rebuild pages (--all, --clear-overrides)",
+      },
+      {
+        usage: "docs pages publish <id>",
+        description: "Publish a page's draft (also regenerate · title)",
+      },
+      { usage: "docs guides", description: "Hand-written guides (show · publish)" },
+      { usage: "docs nav", description: "Site navigation (show · publish)" },
+      {
+        usage: "docs versions",
+        description: "Published versions (publish · label · default)",
+      },
+      {
+        usage: "docs domain",
+        description: "Custom docs domain (set · verify · remove)",
+      },
       { usage: "docs changelog", description: "Project changelog" },
       {
         usage: "mcp tools",
@@ -160,6 +217,38 @@ const GROUPS: Group[] = [
         usage: "mcp serve",
         description: "Run this CLI as an MCP server over stdio",
       },
+    ],
+  },
+  {
+    title: "Organisation & access",
+    entries: [
+      { usage: "orgs list", description: "Organisations you belong to" },
+      { usage: "orgs show", description: "Plan, limits and SDK languages" },
+      { usage: "orgs switch <id>", description: "Act as another organisation" },
+      { usage: "orgs usage", description: "Consumption this billing period" },
+      { usage: "orgs billing", description: "Plan status (also invoices)" },
+      {
+        usage: "orgs members",
+        description: "The roster (role · remove)",
+      },
+      {
+        usage: "orgs invites",
+        description: "Pending invites (create · resend · revoke)",
+      },
+      { usage: "keys list", description: "API keys (create · revoke)" },
+    ],
+  },
+  {
+    title: "Integrations & queue",
+    entries: [
+      { usage: "github status", description: "Spec-sync connection" },
+      {
+        usage: "github connect <o/r>",
+        description: "Point at a spec file (--branch, --path)",
+      },
+      { usage: "github sync", description: "Pull the spec now" },
+      { usage: "github auto-sync <on|off>", description: "Sync on every push" },
+      { usage: "jobs", description: "Generation queue depth and failures" },
     ],
   },
 ];

@@ -306,6 +306,77 @@ function tools(options: ServeOptions): Tool[] {
         "Per-language GitHub repositories linked to the project's SDKs.",
       inputSchema: schema({}),
     },
+    {
+      name: "octri_monitoring_summary",
+      description:
+        "Production health for the project: event count, error count, error rate and distinct issues over a window. Call this before reading issues — it tells you whether there is anything to look at.",
+      inputSchema: schema({
+        range: {
+          type: "string",
+          enum: ["1h", "6h", "24h", "7d", "30d", "90d"],
+          description: "Time window. Defaults to 24h.",
+        },
+      }),
+    },
+    {
+      name: "octri_list_issues",
+      description:
+        "Grouped production errors, newest first. Each issue has an id usable with octri_get_issue.",
+      inputSchema: schema({
+        range: { type: "string", enum: ["1h", "6h", "24h", "7d", "30d", "90d"] },
+        status: { type: "string", enum: ["unresolved", "resolved", "ignored"] },
+        level: { type: "string", enum: ["debug", "info", "warning", "error", "fatal"] },
+        limit: { type: "number" },
+      }),
+    },
+    {
+      name: "octri_get_issue",
+      description:
+        "One issue with its stack frames and recent events. A frame with resolved=true was de-minified against an uploaded source map; if none are, the symbols for that release were never uploaded.",
+      inputSchema: schema({ issue_id: { type: "string" } }, ["issue_id"]),
+    },
+    {
+      name: "octri_set_issue_status",
+      description:
+        "Triage an issue: resolve it, ignore it, or reopen it (status `unresolved`).",
+      inputSchema: schema(
+        {
+          issue_id: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["unresolved", "resolved", "ignored"],
+          },
+        },
+        ["issue_id", "status"],
+      ),
+    },
+    {
+      name: "octri_query_logs",
+      description:
+        "Raw production events, unaggregated. Use when an issue's grouped view is not enough — e.g. to see every occurrence across releases.",
+      inputSchema: schema({
+        range: { type: "string", enum: ["1h", "6h", "24h", "7d", "30d", "90d"] },
+        level: { type: "string" },
+        query: { type: "string", description: "Free-text match on the message." },
+        limit: { type: "number" },
+      }),
+    },
+    {
+      name: "octri_monitoring_releases",
+      description:
+        "Error rate, new issues and regressions per release. This is how you tell whether a deploy made things worse.",
+      inputSchema: schema({
+        range: { type: "string", enum: ["1h", "6h", "24h", "7d", "30d", "90d"] },
+      }),
+    },
+    {
+      name: "octri_monitoring_performance",
+      description:
+        "Slowest transactions (p50/p95) and suspected N+1 query patterns for the project.",
+      inputSchema: schema({
+        range: { type: "string", enum: ["1h", "6h", "24h", "7d", "30d", "90d"] },
+      }),
+    },
   ];
 
   if (options.allowPublish) {
@@ -346,12 +417,24 @@ function projectOf(ctx: ToolContext, args: Args): string {
   );
 }
 
-function stringArg(args: Args, key: string): string {
+function stringArg(args: Args, key: string, fallback?: string): string {
   const value = args[key];
   if (typeof value !== "string" || value === "") {
+    if (fallback !== undefined) return fallback;
     throw new Error(`\`${key}\` is required.`);
   }
   return value;
+}
+
+function numberArg(args: Args, key: string, fallback: number): number {
+  const value = args[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** Copies an optional string argument through only when the agent supplied one. */
+function optionalString(args: Args, key: string): Record<string, string> {
+  const value = args[key];
+  return typeof value === "string" && value !== "" ? { [key]: value } : {};
 }
 
 function stringList(args: Args, key: string): string[] {
@@ -384,6 +467,60 @@ async function dispatch(
 
     case "octri_list_projects":
       return { projects: await api.listProjects(client) };
+
+    case "octri_monitoring_summary":
+      return api.monitoringSummary(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "range", "24h"),
+      );
+
+    case "octri_list_issues":
+      return api.monitoringIssues(client, projectOf(ctx, args), {
+        range: stringArg(args, "range", "24h"),
+        limit: numberArg(args, "limit", 25),
+        ...optionalString(args, "status"),
+        ...optionalString(args, "level"),
+      });
+
+    case "octri_get_issue":
+      return api.monitoringIssue(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "issue_id"),
+      );
+
+    case "octri_set_issue_status":
+      return api.setIssueStatus(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "issue_id"),
+        stringArg(args, "status") as "unresolved" | "resolved" | "ignored",
+      );
+
+    case "octri_query_logs":
+      return api.monitoringLogs(client, projectOf(ctx, args), {
+        range: stringArg(args, "range", "24h"),
+        limit: numberArg(args, "limit", 50),
+        ...optionalString(args, "level"),
+        ...optionalString(args, "query"),
+      });
+
+    case "octri_monitoring_releases":
+      return {
+        releases: await api.monitoringReleases(
+          client,
+          projectOf(ctx, args),
+          stringArg(args, "range", "24h"),
+        ),
+      };
+
+    case "octri_monitoring_performance":
+      return api.monitoringPerformance(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "range", "24h"),
+      );
 
     case "octri_list_specs":
       return { specs: await api.listSpecs(client, projectOf(ctx, args)) };

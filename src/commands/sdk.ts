@@ -302,37 +302,84 @@ export async function sdkValidate(ctx: Context): Promise<void> {
 
 export async function sdkAudit(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
-  const result = await withSpinner("Auditing SDK surface", () =>
+  const result = await withSpinner("Auditing the spec", () =>
     api.auditSdk(ctx.client, projectId),
   );
 
   emit(result, () => {
-    heading("SDK audit");
-    const findings = (result.findings ?? result.issues) as
-      | { severity?: string; message?: string; path?: string }[]
-      | undefined;
+    const pct =
+      result.maxScore > 0 ? Math.round((result.score / result.maxScore) * 100) : 0;
+    heading(
+      `Spec audit ${bold(`${result.score}/${result.maxScore}`)} ${dim(`(${pct}%)`)}`,
+    );
+    keyValues([
+      ["operations", String(result.surface.operations)],
+      ["models", String(result.surface.models)],
+      ["findings", String(result.findings.length)],
+      ["applied", String(result.appliedFindings.length)],
+      ["ignored", String(result.ignoredFindings.length)],
+    ]);
 
-    if (findings === undefined || findings.length === 0) {
-      keyValues(
-        Object.entries(result).map(([k, v]) => [k, renderValue(v)] as const),
-      );
+    if (result.findings.length === 0) {
+      line();
+      success("Nothing left to fix.");
       return;
     }
-    table(findings, [
+
+    line();
+    table(result.findings, [
       {
         header: "severity",
-        value: (f) => statusLabel(f.severity ?? "info"),
-        flex: 5,
+        value: (f) => statusLabel(f.severity),
+        flex: 6,
+        minWidth: 8,
       },
+      { header: "finding", value: (f) => f.title, flex: 1, minWidth: 24 },
+      { header: "where", value: (f) => dim(f.target), flex: 3, minWidth: 14 },
       {
-        header: "finding",
-        value: (f) => f.message ?? "",
-        flex: 1,
-        minWidth: 24,
+        header: "fix",
+        value: (f) => (f.fixable ? green("auto") : dim("manual")),
+        flex: 8,
       },
-      { header: "where", value: (f) => dim(f.path ?? ""), flex: 3 },
+      { header: "key", value: (f) => dim(f.key), flex: 4, minWidth: 12 },
     ]);
+    note("octri sdk audit apply <key> — apply one automatic fix");
   });
+}
+
+/** `octri sdk audit apply <key>` — write one fixable finding into the spec. */
+export async function sdkAuditApply(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const key = ctx.args.positionals[0];
+  if (key === undefined) throw new Error("Usage: octri sdk audit apply <key>");
+
+  const input = flagString(ctx.args, "input");
+  const result = await withSpinner(`Applying ${dim(key)}`, () =>
+    api.applyAuditFinding(ctx.client, projectId, key, input),
+  );
+  emit(result, () =>
+    success(
+      `Applied ${bold(key)} — score now ${bold(`${result.score}/${result.maxScore}`)}`,
+    ),
+  );
+}
+
+/** `octri sdk audit ignore <key> [--unignore]` — mute a finding. */
+export async function sdkAuditIgnore(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const key = ctx.args.positionals[0];
+  if (key === undefined) throw new Error("Usage: octri sdk audit ignore <key>");
+
+  const ignored = ctx.args.flags["unignore"] !== true;
+  const result = await withSpinner(
+    `${ignored ? "Ignoring" : "Un-ignoring"} ${dim(key)}`,
+    () => api.ignoreAuditFinding(ctx.client, projectId, key, ignored),
+  );
+  emit(result, () =>
+    success(
+      `${ignored ? "Ignored" : "Restored"} ${bold(key)} — score now ${bold(`${result.score}/${result.maxScore}`)}`,
+    ),
+  );
 }
 
 // ─── Builds ───────────────────────────────────────────────────────────────────

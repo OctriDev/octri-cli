@@ -1,7 +1,7 @@
 {
   "name": "@octri/cli",
   "version": "0.1.0",
-  "description": "Octri command line — drive projects, specs, docs and the SDK generator from a terminal, plus an MCP server that exposes the same surface to AI agents.",
+  "description": "Octri command line \u2014 drive projects, specs, docs and the SDK generator from a terminal, plus an MCP server that exposes the same surface to AI agents.",
   "keywords": [
     "octri",
     "cli",
@@ -28,6 +28,7 @@
   },
   "files": [
     "dist/**",
+    "!dist/**/*.test.*",
     "README.md"
   ],
   "publishConfig": {
@@ -41,7 +42,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test dist/*.test.js",
+    "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {

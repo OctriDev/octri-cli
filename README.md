@@ -1,10 +1,10 @@
 # @octri/cli
 
-**The `octri` command line: push OpenAPI specs, build SDKs, and read your API
-documentation from a terminal, with an MCP server that hands an AI agent the
-same commands.** Push a spec, trigger an SDK build across ten languages, watch
-every lane live, pull the artifacts down, read the emitted source, and diff two
-runs to see exactly what a generator change did.
+**The `octri` command line: push OpenAPI specs, build SDKs, publish docs and
+work production errors from a terminal, with an MCP server that hands an AI
+agent the same commands.** Push a spec, trigger an SDK build across ten
+languages, watch every lane live, publish a docs version, upload source maps
+from CI, then triage the issues those SDKs report back.
 
 Octri turns an OpenAPI spec into a documentation site, client SDKs for ten
 languages, an MCP server your AI assistant can call, and monitoring for the
@@ -70,7 +70,12 @@ octri sdk preview --lang go --out ./out
 | `specs` | `list` · `push <file\|->` · `import <url>` · `status` · `delete` |
 | `sdk` | `languages` · `operations` · `settings get\|set` · `validate` · `audit` · `preview` · `build` · `builds` · `watch` · `artifacts` · `download` · `retry` · `publish` · `repos` · `stats` |
 | `lab` | `run` · `runs` · `pull` · `files` · `cat` · `diff` |
-| `docs` | `pages` · `show <slug>` · `changelog` |
+| `docs` | `pages [generate\|regenerate\|publish\|title]` · `show <slug>` · `guides` · `nav` · `versions` · `domain` · `changelog` |
+| `monitoring` | `status` · `enable` · `summary` · `issues` · `issue <id>` · `resolve\|ignore\|reopen\|comment` · `logs` · `traces` · `performance` · `releases` · `alerts` · `checks` · `sourcemaps upload` · `sources upload` · `config` |
+| `orgs` | `list` · `show` · `switch` · `usage` · `billing` · `invoices` · `members` · `invites` |
+| `keys` | `list` · `create <name>` · `revoke <id>` |
+| `github` | `status` · `connect <owner/repo>` · `sync` · `auto-sync <on\|off>` |
+| `jobs` | `list` · `show <id>` |
 | `mcp` | `tools` · `serve` |
 
 Global flags: `--project <id>`, `--profile <name>`, `--api-url <url>`, `--json`,
@@ -149,7 +154,11 @@ Tools include `octri_whoami`, `octri_list_projects`, `octri_list_operations`,
 `octri_get_sdk_settings` / `octri_set_sdk_settings`, `octri_validate_spec`,
 `octri_preview_sdk`, `octri_trigger_build`, `octri_wait_for_build`,
 `octri_retry_build`, `octri_fetch_artifacts`, `octri_list_generated_files`,
-`octri_read_generated_file` and `octri_diff_builds`.
+`octri_read_generated_file` and `octri_diff_builds`, plus the monitoring set:
+`octri_monitoring_summary`, `octri_list_issues`, `octri_get_issue`,
+`octri_set_issue_status`, `octri_query_logs`, `octri_monitoring_releases` and
+`octri_monitoring_performance`. That last group is what lets an agent close the
+loop: read the production error its own SDK change caused, then fix it.
 
 **Safety posture.** Credentials come from the stored profile; the agent never
 sees them. Reads are unrestricted. The two irreversible operations are gated
@@ -163,6 +172,32 @@ octri mcp serve --allow-delete    # deleting specs
 
 Tool failures are returned as tool results, not protocol errors, so an agent can
 read the message and correct itself.
+
+## Monitoring, and the CLI it replaces
+
+`octri monitoring` was a second binary, `octri-monitoring`, published as
+`@octri/monitoring-cli`. It is one CLI now. That package still exists and still
+works, so pipelines pinned to it keep running, but it holds no code of its own:
+it prints a deprecation notice and forwards straight into this router.
+
+Reads and triage go through the dashboard API using your session. The two upload
+commands are different, deliberately: they POST at the monitoring service with
+the project's ingest token, because a CI job has one secret and no interactive
+login.
+
+```bash
+# CI: three values, no login
+octri monitoring sourcemaps upload ./dist \
+  --url "$MONITORING_URL" --token "$MONITORING_TOKEN" \
+  --environment "$MONITORING_ENVIRONMENT" --release "$GIT_SHA"
+
+# Laptop: signed in, connection resolved for you
+octri monitoring sourcemaps upload ./dist
+```
+
+`octri monitoring config` prints the three values for pasting into CI. The
+release you upload under must equal the release your SDK reports at runtime, or
+the service has nothing to pair a trace with.
 
 ## Notes
 

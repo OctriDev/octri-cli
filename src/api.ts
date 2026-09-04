@@ -144,9 +144,18 @@ export interface McpTool {
 
 // ─── Auth / identity ──────────────────────────────────────────────────────────
 
+export interface Membership {
+  orgId: string;
+  orgName: string;
+  role: string;
+  status: string;
+}
+
 export interface Me {
   user: { id: string; email: string; name?: string };
   org: { id: string; name: string; plan: string; billingStatus?: string };
+  role?: string;
+  memberships?: Membership[];
 }
 
 export function me(client: OctriClient): Promise<Me> {
@@ -243,11 +252,38 @@ export function importSpecUrl(
   });
 }
 
+/**
+ * Ingestion progress. Note the nesting: the spec's own row status and the
+ * generation pipeline's roll-up are separate — a spec can be `complete` while
+ * its doc pages are still being written.
+ */
+export interface SpecStatus {
+  spec: {
+    id: string;
+    version: string;
+    status: string;
+    endpointCount?: number;
+    isCurrent?: boolean;
+  };
+  project: { id: string; status: string; docsUrl?: string };
+  generation: {
+    overallStatus: "queued" | "generating" | "complete" | "partial" | "failed";
+    percentComplete: number;
+    jobs: {
+      type: string;
+      status: string;
+      progress: { total: number; completed: number; failed: number };
+    }[];
+    allComplete: boolean;
+    anyFailed: boolean;
+  };
+}
+
 export function specStatus(
   client: OctriClient,
   projectId: string,
   specId: string,
-): Promise<Record<string, unknown>> {
+): Promise<SpecStatus> {
   return client.request(`/projects/${projectId}/specs/${specId}/status`);
 }
 
@@ -346,13 +382,72 @@ export function validateSpec(
   });
 }
 
+export type AuditSeverity = "error" | "warning" | "info" | string;
+
+export interface AuditFinding {
+  key: string;
+  ruleId: string;
+  title: string;
+  why?: string;
+  severity: AuditSeverity;
+  target: string;
+  message: string;
+  fixable: boolean;
+  fix?: { label: string; kind: string; field: string };
+}
+
+export interface AuditRule {
+  ruleId: string;
+  title: string;
+  weight: number;
+  findings: number;
+  deduction: number;
+}
+
+export interface AuditResult {
+  score: number;
+  maxScore: number;
+  findings: AuditFinding[];
+  ignoredFindings: AuditFinding[];
+  appliedFindings: AuditFinding[];
+  byRule: AuditRule[];
+  surface: { operations: number; models: number };
+}
+
+/** Spec-quality report. A read — the generator scores the stored spec in place. */
 export function auditSdk(
   client: OctriClient,
   projectId: string,
-): Promise<Record<string, unknown>> {
+): Promise<AuditResult> {
   return client.request(`/projects/${projectId}/sdk/audit`, {
+    timeoutMs: 120_000,
+  });
+}
+
+/** Applies one fixable finding to the spec, returning the re-scored audit. */
+export function applyAuditFinding(
+  client: OctriClient,
+  projectId: string,
+  key: string,
+  input?: unknown,
+): Promise<AuditResult & { appliedKey: string }> {
+  return client.request(`/projects/${projectId}/sdk/audit/apply`, {
     method: "POST",
-    body: {},
+    body: input === undefined ? { key } : { key, input },
+    timeoutMs: 120_000,
+  });
+}
+
+/** Mutes (or un-mutes) one finding, returning the re-scored audit. */
+export function ignoreAuditFinding(
+  client: OctriClient,
+  projectId: string,
+  key: string,
+  ignored: boolean,
+): Promise<AuditResult> {
+  return client.request(`/projects/${projectId}/sdk/audit/ignore`, {
+    method: "POST",
+    body: { key, ignored },
     timeoutMs: 120_000,
   });
 }
@@ -638,4 +733,1001 @@ export async function watchBuild(
 
   if (last !== undefined) return last;
   throw new Error(`Build ${buildId} not found on this project.`);
+}
+
+// ─── Monitoring ───────────────────────────────────────────────────────────────
+//
+// Every read and write here goes through the dashboard's monitoring proxy, which
+// scopes the call to the project's `environment` and keeps the platform's
+// internal token server-side. The CLI therefore never holds a monitoring
+// credential for these — only the artifact uploads use the project ingest token,
+// and those talk to the monitoring service directly (see `./monitoring/upload.js`).
+
+export interface MonitoringConnection {
+  configured: boolean;
+  enabled: boolean;
+  statusPageEnabled?: boolean;
+  docsBannerEnabled?: boolean;
+  statusDomain?: string;
+  environment?: string;
+  ingestUrl?: string;
+}
+
+/** Credentials a CI job needs to upload symbolication artifacts. */
+export interface MonitoringSdkConfig {
+  baseUrl: string;
+  ingestUrl: string;
+  token?: string;
+  environment: string;
+}
+
+export interface MonitoringWindow {
+  since: string;
+  until: string;
+}
+
+export interface MonitoringSummary {
+  window: MonitoringWindow;
+  total: number;
+  errors: number;
+  errorRate: number;
+  distinctIssues: number;
+  byLevel: Record<string, number>;
+}
+
+/** A de-minified stack frame; `resolved` marks one matched to an uploaded map. */
+export interface MonitoringStackFrame {
+  function?: string;
+  filename?: string;
+  lineno?: number;
+  colno?: number;
+  inApp?: boolean;
+  resolved?: boolean;
+  contextLine?: string;
+}
+
+export interface MonitoringErrorInfo {
+  name?: string | null;
+  message?: string | null;
+  stack?: string;
+  frames?: MonitoringStackFrame[];
+}
+
+export interface MonitoringIssue {
+  _id: string;
+  fingerprint: string;
+  title?: string;
+  culprit?: string | null;
+  level?: string;
+  method?: string | null;
+  path?: string | null;
+  status: "unresolved" | "resolved" | "ignored";
+  count: number;
+  usersAffected: number;
+  firstSeen: string;
+  lastSeen: string;
+  lastMessage?: string | null;
+  lastStatusCode?: number | null;
+  lastError?: MonitoringErrorInfo | null;
+  assignee?: { id?: string; name?: string; email?: string } | null;
+}
+
+export interface MonitoringLogEvent {
+  _id: string;
+  timestamp: string;
+  level: string;
+  method?: string | null;
+  path?: string | null;
+  message?: string | null;
+  error?: MonitoringErrorInfo | null;
+  statusCode?: number | null;
+  latencyMs?: number | null;
+  release?: string | null;
+  requestId?: string | null;
+}
+
+export interface MonitoringTraceListItem {
+  traceId: string;
+  rootName?: string | null;
+  rootService?: string | null;
+  start: string;
+  durationMs?: number | null;
+  spanCount: number;
+  hasError: boolean;
+}
+
+export interface MonitoringRelease {
+  release: string;
+  events: number;
+  errors: number;
+  errorRate: number;
+  issues: number;
+  usersAffected: number;
+  firstSeen: string;
+  lastSeen: string;
+  newIssues: number;
+  regressions: number;
+}
+
+export interface MonitoringAlertRule {
+  _id: string;
+  name: string;
+  enabled: boolean;
+  kind: "threshold" | "new_issue" | "regression";
+  query?: string;
+  threshold: number;
+  windowMinutes: number;
+  cooldownMinutes: number;
+  channel: { type: "webhook" | "slack"; url: string };
+  lastTriggeredAt?: string | null;
+  triggerCount: number;
+}
+
+export interface MonitoringCheck {
+  _id: string;
+  name: string;
+  method: string;
+  url: string;
+  intervalMinutes: number;
+  timeoutMs: number;
+  enabled: boolean;
+  source: "spec" | "manual";
+  lastStatus?: string | null;
+  lastRunAt?: string | null;
+  uptime?: number | null;
+}
+
+export interface MonitoringTransactionStat {
+  transaction: string;
+  count: number;
+  errorRate: number;
+  p50: number;
+  p95: number;
+  avgMs: number;
+}
+
+export interface MonitoringArtifactRow {
+  filename?: string;
+  path?: string;
+  release?: string;
+  size?: number;
+  uploadedAt?: string;
+  createdAt?: string;
+}
+
+/** Range shorthand accepted by every windowed monitoring read. */
+export type MonitoringRange = "1h" | "6h" | "24h" | "7d" | "30d" | "90d";
+
+function monitoringPath(projectId: string, suffix: string): string {
+  return `/projects/${projectId}/monitoring${suffix}`;
+}
+
+export function monitoringConnection(
+  client: OctriClient,
+  projectId: string,
+): Promise<MonitoringConnection> {
+  return client.request(monitoringPath(projectId, "/connection"));
+}
+
+export function setMonitoringEnabled(
+  client: OctriClient,
+  projectId: string,
+  enabled: boolean,
+): Promise<MonitoringConnection> {
+  return client.request(
+    monitoringPath(projectId, enabled ? "/enable" : "/disable"),
+    { method: "POST" },
+  );
+}
+
+export function monitoringSdkConfig(
+  client: OctriClient,
+  projectId: string,
+): Promise<MonitoringSdkConfig> {
+  return client.request(monitoringPath(projectId, "/sdk-config"));
+}
+
+export function monitoringSummary(
+  client: OctriClient,
+  projectId: string,
+  range: string,
+): Promise<MonitoringSummary> {
+  return client.request(monitoringPath(projectId, "/summary"), {
+    query: { range },
+  });
+}
+
+export async function monitoringIssues(
+  client: OctriClient,
+  projectId: string,
+  query: Record<string, string | number | undefined>,
+): Promise<{ items: MonitoringIssue[]; count: number }> {
+  const body = await client.request<{
+    items?: MonitoringIssue[];
+    count?: number;
+  }>(monitoringPath(projectId, "/issues"), { query });
+  return { items: body.items ?? [], count: body.count ?? 0 };
+}
+
+export function monitoringIssue(
+  client: OctriClient,
+  projectId: string,
+  issueId: string,
+): Promise<{ issue: MonitoringIssue; events: MonitoringLogEvent[] }> {
+  return client.request(monitoringPath(projectId, `/issues/${issueId}`));
+}
+
+export function setIssueStatus(
+  client: OctriClient,
+  projectId: string,
+  issueId: string,
+  status: "unresolved" | "resolved" | "ignored",
+): Promise<MonitoringIssue> {
+  return client.request(monitoringPath(projectId, `/issues/${issueId}`), {
+    method: "PATCH",
+    body: { status },
+  });
+}
+
+export function commentOnIssue(
+  client: OctriClient,
+  projectId: string,
+  issueId: string,
+  body: string,
+): Promise<unknown> {
+  return client.request(
+    monitoringPath(projectId, `/issues/${issueId}/comments`),
+    { method: "POST", body: { body } },
+  );
+}
+
+export async function monitoringLogs(
+  client: OctriClient,
+  projectId: string,
+  body: Record<string, unknown>,
+): Promise<{ items: MonitoringLogEvent[]; count: number }> {
+  const result = await client.request<{
+    items?: MonitoringLogEvent[];
+    count?: number;
+  }>(monitoringPath(projectId, "/logs/query"), { method: "POST", body });
+  return { items: result.items ?? [], count: result.count ?? 0 };
+}
+
+export async function monitoringTraces(
+  client: OctriClient,
+  projectId: string,
+  query: Record<string, string | number | undefined>,
+): Promise<{ items: MonitoringTraceListItem[]; count: number }> {
+  const body = await client.request<{
+    items?: MonitoringTraceListItem[];
+    count?: number;
+  }>(monitoringPath(projectId, "/traces"), { query });
+  return { items: body.items ?? [], count: body.count ?? 0 };
+}
+
+export function monitoringTrace(
+  client: OctriClient,
+  projectId: string,
+  traceId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(monitoringPath(projectId, `/traces/${traceId}`));
+}
+
+export function monitoringPerformance(
+  client: OctriClient,
+  projectId: string,
+  range: string,
+): Promise<{
+  transactions: MonitoringTransactionStat[];
+  nPlusOne: { query: string; service: string; tracesAffected: number }[];
+}> {
+  return client.request(monitoringPath(projectId, "/performance"), {
+    query: { range },
+  });
+}
+
+export async function monitoringReleases(
+  client: OctriClient,
+  projectId: string,
+  range: string,
+): Promise<MonitoringRelease[]> {
+  const body = await client.request<{ items?: MonitoringRelease[] }>(
+    monitoringPath(projectId, "/releases"),
+    { query: { range } },
+  );
+  return body.items ?? [];
+}
+
+export async function monitoringAlerts(
+  client: OctriClient,
+  projectId: string,
+): Promise<MonitoringAlertRule[]> {
+  const body = await client.request<{ items?: MonitoringAlertRule[] }>(
+    monitoringPath(projectId, "/alerts"),
+  );
+  return body.items ?? [];
+}
+
+export function createMonitoringAlert(
+  client: OctriClient,
+  projectId: string,
+  body: Record<string, unknown>,
+): Promise<MonitoringAlertRule> {
+  return client.request(monitoringPath(projectId, "/alerts"), {
+    method: "POST",
+    body,
+  });
+}
+
+export function deleteMonitoringAlert(
+  client: OctriClient,
+  projectId: string,
+  alertId: string,
+): Promise<unknown> {
+  return client.request(monitoringPath(projectId, `/alerts/${alertId}`), {
+    method: "DELETE",
+  });
+}
+
+export function evaluateMonitoringAlerts(
+  client: OctriClient,
+  projectId: string,
+): Promise<{ evaluated: number; results: { rule: string; triggered?: boolean }[] }> {
+  return client.request(monitoringPath(projectId, "/alerts/evaluate"), {
+    method: "POST",
+  });
+}
+
+export async function monitoringChecks(
+  client: OctriClient,
+  projectId: string,
+): Promise<MonitoringCheck[]> {
+  const body = await client.request<{ items?: MonitoringCheck[] }>(
+    monitoringPath(projectId, "/checks"),
+  );
+  return body.items ?? [];
+}
+
+export function runMonitoringCheck(
+  client: OctriClient,
+  projectId: string,
+  checkId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(monitoringPath(projectId, `/checks/${checkId}/run`), {
+    method: "POST",
+    timeoutMs: 60_000,
+  });
+}
+
+/**
+ * Derives one check per endpoint from the current spec. `baseUrl` is only needed
+ * when the spec declares no absolute server URL — otherwise the first server wins.
+ */
+export function generateMonitoringChecks(
+  client: OctriClient,
+  projectId: string,
+  options: { baseUrl?: string; intervalMinutes?: number } = {},
+): Promise<{
+  generated?: number;
+  created?: number;
+  updated?: number;
+  skipped?: number;
+  baseUrl?: string;
+}> {
+  return client.request(monitoringPath(projectId, "/checks/generate"), {
+    method: "POST",
+    body: {
+      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+      ...(options.intervalMinutes === undefined
+        ? {}
+        : { intervalMinutes: options.intervalMinutes }),
+    },
+    timeoutMs: 120_000,
+  });
+}
+
+export function sendMonitoringTestEvent(
+  client: OctriClient,
+  projectId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(monitoringPath(projectId, "/test-event"), {
+    method: "POST",
+    timeoutMs: 60_000,
+  });
+}
+
+export async function monitoringArtifacts(
+  client: OctriClient,
+  projectId: string,
+  kind: "sourcemaps" | "source-files",
+  release?: string,
+): Promise<MonitoringArtifactRow[]> {
+  const body = await client.request<
+    { items?: MonitoringArtifactRow[] } | MonitoringArtifactRow[]
+  >(monitoringPath(projectId, `/${kind}`), {
+    query: release === undefined ? {} : { release },
+  });
+  return Array.isArray(body) ? body : (body.items ?? []);
+}
+
+// ─── Organisation, members, invites ───────────────────────────────────────────
+
+export interface Org {
+  id: string;
+  name: string;
+  slug?: string;
+  plan: string;
+  /** Only set when the org came from the membership list. */
+  role?: string;
+  status?: string;
+  planLimits?: Record<string, unknown>;
+  usage?: Record<string, number>;
+  preferredSdkLanguages?: string[];
+  createdAt?: string;
+}
+
+export interface Member {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  mfaEnabled?: boolean;
+  lastActiveAt?: string;
+  joinedAt?: string;
+}
+
+export interface Invite {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  createdAt?: string;
+  expiresAt?: string;
+}
+
+export interface BillingStatus {
+  plan: string;
+  status?: string;
+  trialEndsAt?: string;
+  currentPeriodEnd?: string;
+  cancelAtPeriodEnd?: boolean;
+  usage?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+}
+
+export interface Invoice {
+  id?: string;
+  number?: string;
+  amount?: number;
+  currency?: string;
+  status?: string;
+  createdAt?: string;
+  hostedUrl?: string;
+}
+
+/**
+ * Orgs the signed-in user belongs to.
+ *
+ * There is no `GET /orgs` collection route — org membership is part of the
+ * session, so the switcher (and this) reads it off `/auth/me`. The plan is only
+ * known for the *active* org, which is why it is blank for the others.
+ */
+export async function listOrgs(client: OctriClient): Promise<Org[]> {
+  const who = await me(client);
+  const memberships = who.memberships ?? [];
+  if (memberships.length === 0) {
+    return [{ id: who.org.id, name: who.org.name, plan: who.org.plan }];
+  }
+  return memberships.map((m) => ({
+    id: m.orgId,
+    name: m.orgName,
+    plan: m.orgId === who.org.id ? who.org.plan : "",
+    role: m.role,
+    status: m.status,
+  }));
+}
+
+export async function getOrg(client: OctriClient, orgId: string): Promise<Org> {
+  const body = await client.request<{ org: Org }>(`/orgs/${orgId}`);
+  return body.org;
+}
+
+export async function listMembers(
+  client: OctriClient,
+  orgId: string,
+): Promise<Member[]> {
+  const body = await client.request<{ members?: Member[] }>(
+    `/orgs/${orgId}/members`,
+  );
+  return body.members ?? [];
+}
+
+export function updateMember(
+  client: OctriClient,
+  orgId: string,
+  userId: string,
+  patch: { role?: string; status?: string },
+): Promise<unknown> {
+  return client.request(`/orgs/${orgId}/members/${userId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export function removeMember(
+  client: OctriClient,
+  orgId: string,
+  userId: string,
+): Promise<unknown> {
+  return client.request(`/orgs/${orgId}/members/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listInvites(
+  client: OctriClient,
+  orgId: string,
+): Promise<Invite[]> {
+  const body = await client.request<{ invites?: Invite[] }>(
+    `/orgs/${orgId}/invites`,
+  );
+  return body.invites ?? [];
+}
+
+export function createInvite(
+  client: OctriClient,
+  orgId: string,
+  email: string,
+  role: string,
+): Promise<unknown> {
+  return client.request(`/orgs/${orgId}/invites`, {
+    method: "POST",
+    body: { email, role },
+  });
+}
+
+export function resendInvite(
+  client: OctriClient,
+  orgId: string,
+  inviteId: string,
+): Promise<unknown> {
+  return client.request(`/orgs/${orgId}/invites/${inviteId}/resend`, {
+    method: "POST",
+  });
+}
+
+export function revokeInvite(
+  client: OctriClient,
+  orgId: string,
+  inviteId: string,
+): Promise<unknown> {
+  return client.request(`/orgs/${orgId}/invites/${inviteId}`, {
+    method: "DELETE",
+  });
+}
+
+export function orgUsage(
+  client: OctriClient,
+  orgId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/orgs/${orgId}/usage`);
+}
+
+export function billingStatus(
+  client: OctriClient,
+  orgId: string,
+): Promise<BillingStatus> {
+  return client.request(`/orgs/${orgId}/billing/status`);
+}
+
+export async function listInvoices(
+  client: OctriClient,
+  orgId: string,
+): Promise<Invoice[]> {
+  const body = await client.request<{ invoices?: Invoice[] }>(
+    `/orgs/${orgId}/billing/invoices`,
+  );
+  return body.invoices ?? [];
+}
+
+/** Re-issues the session against another org. Returns the new tokens. */
+export function switchOrg(
+  client: OctriClient,
+  orgId: string,
+): Promise<{ accessToken?: string; refreshToken?: string }> {
+  return client.request("/auth/switch-org", {
+    method: "POST",
+    body: { orgId },
+  });
+}
+
+// ─── API keys ─────────────────────────────────────────────────────────────────
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix?: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  createdAt?: string;
+  createdBy?: string;
+}
+
+export async function listApiKeys(client: OctriClient): Promise<ApiKey[]> {
+  const body = await client.request<{ keys?: ApiKey[] } | ApiKey[]>(
+    "/api-keys",
+  );
+  return Array.isArray(body) ? body : (body.keys ?? []);
+}
+
+/** `plaintext` is returned once, on creation, and is never readable again. */
+export function createApiKey(
+  client: OctriClient,
+  name: string,
+  expiresAt?: string,
+): Promise<{ key: ApiKey; plaintext: string }> {
+  return client.request("/api-keys", {
+    method: "POST",
+    body: expiresAt === undefined ? { name } : { name, expiresAt },
+  });
+}
+
+export function revokeApiKey(
+  client: OctriClient,
+  keyId: string,
+): Promise<unknown> {
+  return client.request(`/api-keys/${keyId}`, { method: "DELETE" });
+}
+
+// ─── Docs authoring: pages, guides, nav, versions, domain ─────────────────────
+
+export interface DocPageDetail extends DocPage {
+  hasDraft?: boolean;
+  noindex?: boolean;
+  publishedAt?: string;
+}
+
+export interface GenerationSummary {
+  total?: number;
+  generated?: number;
+  stale?: number;
+  missing?: number;
+  edited?: number;
+  [key: string]: unknown;
+}
+
+export function docsGenerationSummary(
+  client: OctriClient,
+  projectId: string,
+): Promise<GenerationSummary> {
+  return client.request(`/projects/${projectId}/doc-pages/generation-summary`);
+}
+
+/**
+ * Rebuilds doc pages. `missing` leaves fingerprints alone and lets the freshness
+ * classifier decide; `all` drops them so every page is rewritten.
+ */
+export function generateDocPages(
+  client: OctriClient,
+  projectId: string,
+  mode: "missing" | "all",
+  clearOverrides: boolean,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/doc-pages/generate`, {
+    method: "POST",
+    body: { mode, clearOverrides },
+    timeoutMs: 300_000,
+  });
+}
+
+export function regenerateDocPage(
+  client: OctriClient,
+  projectId: string,
+  docPageId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(
+    `/projects/${projectId}/doc-pages/${docPageId}/regenerate`,
+    { method: "POST", body: {}, timeoutMs: 300_000 },
+  );
+}
+
+export function publishDocPageDraft(
+  client: OctriClient,
+  projectId: string,
+  docPageId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(
+    `/projects/${projectId}/doc-pages/${docPageId}/draft/publish`,
+    { method: "POST", body: {} },
+  );
+}
+
+export function setDocPageTitle(
+  client: OctriClient,
+  projectId: string,
+  docPageId: string,
+  title: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/doc-pages/${docPageId}/title`, {
+    method: "PATCH",
+    body: { title },
+  });
+}
+
+export interface NavTab {
+  id?: string;
+  title?: string;
+  label?: string;
+  items?: unknown[];
+}
+
+export function getNav(
+  client: OctriClient,
+  projectId: string,
+): Promise<{ sections: unknown; tabs: NavTab[]; hasDraft: boolean }> {
+  return client.request(`/projects/${projectId}/nav`);
+}
+
+export function publishNav(
+  client: OctriClient,
+  projectId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/nav/publish`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export interface Guide {
+  id: string;
+  title: string;
+  slug: string;
+  groupId: string | null;
+  order?: number;
+  published: boolean;
+  hasUnpublishedChanges: boolean;
+}
+
+export async function listGuides(
+  client: OctriClient,
+  projectId: string,
+): Promise<Guide[]> {
+  const body = await client.request<{ guides?: Guide[] }>(
+    `/projects/${projectId}/guides`,
+  );
+  return body.guides ?? [];
+}
+
+export function getGuide(
+  client: OctriClient,
+  projectId: string,
+  guideId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/guides/${guideId}`);
+}
+
+export function publishGuide(
+  client: OctriClient,
+  projectId: string,
+  guideId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/guides/${guideId}/publish`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export interface DocsVersion {
+  specId: string;
+  version: string;
+  versionLabel?: string;
+  publishedAt?: string;
+  endpointCount?: number;
+  isCurrent?: boolean;
+}
+
+export async function listVersions(
+  client: OctriClient,
+  projectId: string,
+): Promise<DocsVersion[]> {
+  const body = await client.request<{ versions?: DocsVersion[] }>(
+    `/projects/${projectId}/versions`,
+  );
+  return body.versions ?? [];
+}
+
+export function publishVersion(
+  client: OctriClient,
+  projectId: string,
+  specId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/versions/${specId}/publish`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export function unpublishVersion(
+  client: OctriClient,
+  projectId: string,
+  specId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/versions/${specId}/unpublish`, {
+    method: "DELETE",
+  });
+}
+
+export function labelVersion(
+  client: OctriClient,
+  projectId: string,
+  specId: string,
+  versionLabel: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/versions/${specId}/label`, {
+    method: "PATCH",
+    body: { versionLabel },
+  });
+}
+
+export function setDefaultVersion(
+  client: OctriClient,
+  projectId: string,
+  specId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/versions/default`, {
+    method: "PATCH",
+    body: { specId },
+  });
+}
+
+export interface CustomDomain {
+  cnameTarget: string;
+  domain: {
+    hostname: string;
+    status: "pending_verification" | "verified" | "failed";
+    addedAt?: string;
+    verifiedAt?: string | null;
+    lastError?: string | null;
+  } | null;
+  instructions: {
+    cnameRecord: { type: string; name: string; value: string };
+    txtRecord: { type: string; name: string; value: string };
+  } | null;
+}
+
+export function getCustomDomain(
+  client: OctriClient,
+  projectId: string,
+): Promise<CustomDomain> {
+  return client.request(`/projects/${projectId}/custom-domain`);
+}
+
+export function setCustomDomain(
+  client: OctriClient,
+  projectId: string,
+  hostname: string,
+): Promise<CustomDomain> {
+  return client.request(`/projects/${projectId}/custom-domain`, {
+    method: "POST",
+    body: { hostname },
+  });
+}
+
+export function verifyCustomDomain(
+  client: OctriClient,
+  projectId: string,
+): Promise<CustomDomain> {
+  return client.request(`/projects/${projectId}/custom-domain/verify`, {
+    method: "POST",
+    body: {},
+    timeoutMs: 60_000,
+  });
+}
+
+export function removeCustomDomain(
+  client: OctriClient,
+  projectId: string,
+): Promise<unknown> {
+  return client.request(`/projects/${projectId}/custom-domain`, {
+    method: "DELETE",
+  });
+}
+
+// ─── GitHub spec sync ─────────────────────────────────────────────────────────
+
+export interface GitHubStatus {
+  connected: boolean;
+  autoSync: boolean;
+  reverseSyncSpec?: boolean;
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  specPath?: string;
+  webhookId?: string;
+  lastSyncedAt?: string;
+  lastSyncedSha?: string;
+}
+
+export function githubStatus(
+  client: OctriClient,
+  projectId: string,
+): Promise<GitHubStatus> {
+  return client.request(`/projects/${projectId}/github/status`);
+}
+
+export function githubConnect(
+  client: OctriClient,
+  projectId: string,
+  body: { owner: string; repo: string; branch: string; specPath: string },
+): Promise<GitHubStatus> {
+  return client.request(`/projects/${projectId}/github/connect`, {
+    method: "POST",
+    body,
+    timeoutMs: 120_000,
+  });
+}
+
+export function githubDisconnect(
+  client: OctriClient,
+  projectId: string,
+): Promise<unknown> {
+  return client.request(`/projects/${projectId}/github/disconnect`, {
+    method: "DELETE",
+  });
+}
+
+export function githubSyncNow(
+  client: OctriClient,
+  projectId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/github/sync-now`, {
+    method: "POST",
+    body: {},
+    timeoutMs: 180_000,
+  });
+}
+
+export function githubSyncToggle(
+  client: OctriClient,
+  projectId: string,
+  autoSync: boolean,
+): Promise<GitHubStatus> {
+  return client.request(`/projects/${projectId}/github/sync-toggle`, {
+    method: "PATCH",
+    body: { autoSync },
+  });
+}
+
+export function githubAppStatus(
+  client: OctriClient,
+  projectId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/github/app/status`);
+}
+
+// ─── Generation jobs ──────────────────────────────────────────────────────────
+
+export interface JobSummary {
+  total: number;
+  queued: number;
+  processing: number;
+  complete: number;
+  failed: number;
+}
+
+export function jobSummary(
+  client: OctriClient,
+  projectId: string,
+): Promise<JobSummary> {
+  return client.request(`/projects/${projectId}/jobs`);
+}
+
+export function getJob(
+  client: OctriClient,
+  projectId: string,
+  jobId: string,
+): Promise<Record<string, unknown>> {
+  return client.request(`/projects/${projectId}/jobs/${jobId}`);
 }

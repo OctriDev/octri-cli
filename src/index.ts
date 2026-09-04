@@ -16,4 +16,15 @@ export {
 } from "./config.js";
 export { extract, extractTar, extractTarGz, extractZip } from "./archive.js";
 export { parse, type ParsedArgs } from "./args.js";
+export { run, report } from "./run.js";
 export { serve as serveMcp, type ServeOptions } from "./mcp/server.js";
+export {
+  uploadSourceMaps,
+  uploadSourceFiles,
+  gitRelease,
+  SOURCE_EXTENSIONS,
+  type UploadOptions,
+  type UploadResult,
+  type SourceUploadOptions,
+  type SourceUploadResult,
+} from "./monitoring/upload.js";

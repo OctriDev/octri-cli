@@ -198,10 +198,24 @@ export function bytes(value: number | undefined): string {
   return `${n < 10 && u > 0 ? n.toFixed(1) : Math.round(n)} ${units[u]}`;
 }
 
+/**
+ * Parses a timestamp to epoch ms.
+ *
+ * ClickHouse — which is what the monitoring service stores events in — renders
+ * DateTime64 as `2026-09-04 09:59:19.237`: a space separator and no zone. ECMA-262
+ * says a non-conforming string like that is implementation-defined, and Node reads
+ * it as *local* time, so every monitoring timestamp came out shifted by the host's
+ * UTC offset. These values are always UTC, so normalise before parsing.
+ */
+export function parseTimestamp(value: string): number {
+  const zoneless = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(value);
+  return Date.parse(zoneless ? `${value.replace(" ", "T")}Z` : value);
+}
+
 /** Compact relative time, e.g. `4m ago`. Falls back to the raw string. */
 export function relativeTime(iso: string | undefined): string {
   if (iso === undefined) return dim("—");
-  const then = Date.parse(iso);
+  const then = parseTimestamp(iso);
   if (Number.isNaN(then)) return iso;
   const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
   if (secs < 60) return `${secs}s ago`;

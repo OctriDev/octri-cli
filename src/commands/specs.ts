@@ -15,6 +15,7 @@ import {
   heading,
   keyValues,
   line,
+  note,
   relativeTime,
   statusLabel,
   success,
@@ -121,12 +122,25 @@ export async function specsStatus(ctx: Context): Promise<void> {
 
   const status = await api.specStatus(ctx.client, projectId, specId);
   emit(status, () => {
-    heading("Spec status");
-    keyValues(
-      Object.entries(status)
-        .filter(([, v]) => typeof v !== "object" || v === null)
-        .map(([k, v]) => [k, String(v)] as const),
-    );
+    heading(`Spec ${bold(status.spec.version)}`);
+    keyValues([
+      ["spec", status.spec.id],
+      ["status", status.spec.status],
+      ["endpoints", String(status.spec.endpointCount ?? 0)],
+      ["current", status.spec.isCurrent === true ? "yes" : "no"],
+      ["generation", status.generation.overallStatus],
+      ["docs", status.project.docsUrl ?? "—"],
+    ]);
+    line();
+    heading("Pipeline");
+    for (const job of status.generation.jobs) {
+      const { total, completed, failed } = job.progress;
+      const counts = total > 0 ? ` ${completed}/${total}` : "";
+      line(
+        `  ${jobLabel(job.type)} ${dim(job.status + counts)}` +
+          (failed > 0 ? ` ${dim(`${failed} failed`)}` : ""),
+      );
+    }
   });
 }
 
@@ -150,9 +164,13 @@ export async function specsDelete(ctx: Context): Promise<void> {
 // ─── Ingestion follower ───────────────────────────────────────────────────────
 
 /**
- * Polls the spec's status until it leaves the processing states. Parsing a large
- * enterprise spec takes tens of seconds, and knowing it finished is the whole
- * point of pushing one.
+ * Polls the spec's status until ingestion AND the generation pipeline behind it
+ * have settled. Parsing a large enterprise spec takes tens of seconds, and
+ * knowing it finished is the whole point of pushing one.
+ *
+ * The terminal signal is `generation.overallStatus`, not the spec row's own
+ * `status`: the spec flips to `complete` as soon as it parses, while the doc
+ * pages, embeddings and changelog are still being written behind it.
  */
 async function followIngestion(
   ctx: Context,
@@ -164,7 +182,7 @@ async function followIngestion(
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1_500));
-    let status: Record<string, unknown>;
+    let status: api.SpecStatus;
     try {
       status = await api.specStatus(ctx.client, projectId, specId);
     } catch {
@@ -172,28 +190,50 @@ async function followIngestion(
       continue;
     }
 
-    const rawState = status.status ?? status.state;
-    const state = typeof rawState === "string" ? rawState : "";
-    const progress = status.progress;
+    const { overallStatus, percentComplete, anyFailed } = status.generation;
+    const running = status.generation.jobs.find((j) => j.status === "processing");
     spinner.update(
-      `Parsing spec ${dim(state)}${typeof progress === "number" ? dim(` ${progress}%`) : ""}`,
+      `${running === undefined ? "Parsing spec" : jobLabel(running.type)} ${dim(overallStatus)}` +
+        (percentComplete > 0 ? dim(` ${percentComplete}%`) : ""),
     );
 
-    if (state === "failed" || state === "error") {
-      const error = status.error;
+    if (overallStatus === "failed") {
+      const failed = status.generation.jobs
+        .filter((j) => j.progress.failed > 0)
+        .map((j) => `${j.type} (${j.progress.failed})`);
       spinner.failWith(
-        `Spec ingestion failed: ${typeof error === "string" ? error : state}`,
+        `Spec ingestion failed${failed.length > 0 ? `: ${failed.join(", ")}` : ""}`,
       );
       return;
     }
-    if (state === "ready" || state === "completed" || state === "current") {
-      spinner.succeed(
-        `Spec ready ${dim(`in ${Math.round(spinner.elapsed() / 1000)}s`)}`,
-      );
+    if (overallStatus === "complete" || overallStatus === "partial") {
+      const seconds = Math.round(spinner.elapsed() / 1000);
+      if (overallStatus === "partial" || anyFailed) {
+        spinner.warnWith(`Spec ready with failures ${dim(`in ${seconds}s`)}`);
+        note("octri specs status <specId> — which job failed");
+      } else {
+        spinner.succeed(`Spec ready ${dim(`in ${seconds}s`)}`);
+      }
       return;
     }
   }
 
-  spinner.warnWith("Still processing — check `octri specs list` later.");
+  spinner.warnWith("Still processing — check `octri specs status <specId>` later.");
   line();
+}
+
+/** Job type ids read like slugs; give the spinner something human. */
+function jobLabel(type: string): string {
+  switch (type) {
+    case "ai-generate":
+      return "Writing docs";
+    case "embed":
+      return "Indexing for search";
+    case "changelog":
+      return "Building changelog";
+    case "rebuild":
+      return "Rebuilding site";
+    default:
+      return type;
+  }
 }
