@@ -1,9 +1,9 @@
 /**
- * `octri mcp serve` — exposes the CLI's whole surface to an AI agent over MCP.
+ * `octri mcp serve`: exposes the CLI's whole surface to an AI agent over MCP.
  *
  * Purpose: an agent working on the SDK generator can drive the dashboard through
- * typed tool calls — trigger a build, wait for it, read the emitted files, diff
- * two runs — instead of clicking through the web UI, which costs an order of
+ * typed tool calls: trigger a build, wait for it, read the emitted files, diff
+ * two runs, instead of clicking through the web UI, which costs an order of
  * magnitude more tokens per step and cannot be replayed.
  *
  * Safety posture: reads are unrestricted, mutations are grouped, and the two
@@ -59,7 +59,7 @@ const projectProperty = {
   project_id: {
     type: "string",
     description:
-      "Project id. Optional — falls back to the CLI's selected project.",
+      "Project id. Optional, falls back to the CLI's selected project.",
   },
 } as const;
 
@@ -119,7 +119,7 @@ function tools(options: ServeOptions): Tool[] {
     {
       name: "octri_list_operations",
       description:
-        "Every operation the parser found in the current spec, with method, path, operationId and deprecation — the list the SDK Studio renders.",
+        "Every operation the parser found in the current spec, with method, path, operationId and deprecation, the list the SDK Studio renders.",
       inputSchema: schema({}),
     },
     {
@@ -137,7 +137,7 @@ function tools(options: ServeOptions): Tool[] {
           settings: {
             type: "object",
             description:
-              "Complete sdkSettings object — replaces the stored one.",
+              "Complete sdkSettings object. Replaces the stored one.",
           },
           revision: {
             type: "number",
@@ -165,7 +165,7 @@ function tools(options: ServeOptions): Tool[] {
           include_content: {
             type: "boolean",
             description:
-              "Include file contents. Defaults to false — paths only, to keep the response small.",
+              "Include file contents. Defaults to false (paths only) to keep the response small.",
           },
           path_filter: {
             type: "string",
@@ -309,7 +309,7 @@ function tools(options: ServeOptions): Tool[] {
     {
       name: "octri_monitoring_summary",
       description:
-        "Production health for the project: event count, error count, error rate and distinct issues over a window. Call this before reading issues — it tells you whether there is anything to look at.",
+        "Production health for the project: event count, error count, error rate and distinct issues over a window. Call this before reading issues. It tells you whether there is anything to look at.",
       inputSchema: schema({
         range: {
           type: "string",
@@ -353,7 +353,7 @@ function tools(options: ServeOptions): Tool[] {
     {
       name: "octri_query_logs",
       description:
-        "Raw production events, unaggregated. Use when an issue's grouped view is not enough — e.g. to see every occurrence across releases.",
+        "Raw production events, unaggregated. Use when an issue's grouped view is not enough, e.g. to see every occurrence across releases.",
       inputSchema: schema({
         range: { type: "string", enum: ["1h", "6h", "24h", "7d", "30d", "90d"] },
         level: { type: "string" },
@@ -383,7 +383,7 @@ function tools(options: ServeOptions): Tool[] {
     list.push({
       name: "octri_publish_build",
       description:
-        "Publish a ready build's artifacts to package registries. Irreversible for public registries — prefer mode `pack` unless a release was explicitly requested.",
+        "Publish a ready build's artifacts to package registries. Irreversible for public registries. Prefer mode `pack` unless a release was explicitly requested.",
       inputSchema: schema(
         {
           build_id: { type: "string" },
@@ -685,7 +685,7 @@ async function dispatch(
       );
       if (!existsSync(root)) {
         throw new Error(
-          "Not fetched yet — call octri_fetch_artifacts for this build first.",
+          "Not fetched yet. Call octri_fetch_artifacts for this build first.",
         );
       }
       const files = walk(root).map((path) => ({

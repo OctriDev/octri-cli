@@ -12,7 +12,7 @@ import { symbols, write, line } from "./output.js";
 export class NonInteractiveError extends Error {
   constructor(what: string) {
     super(
-      `${what} is required. This shell is not interactive — pass it as a flag instead.`,
+      `${what} is required. This shell is not interactive. Pass it as a flag instead.`,
     );
     this.name = "NonInteractiveError";
   }
@@ -116,7 +116,7 @@ export async function select<T>(
 // ─── Text ─────────────────────────────────────────────────────────────────────
 
 export interface TextOptions {
-  /** Masks input — used for the login password. */
+  /** Masks input, used for the login password. */
   secret?: boolean;
   defaultValue?: string;
 }

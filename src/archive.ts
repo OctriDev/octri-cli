@@ -4,7 +4,8 @@
  * Hand-rolled tar + zip readers so that inspecting generated output needs no
  * extra dependency and no `tar`/`unzip` binary on the host. Both readers refuse
  * to write outside the destination directory (zip-slip), because the archive is
- * produced by a remote service.
+ * produced by a remote service. Both are bounded too, since a few kilobytes of
+ * deflate stream can expand to gigabytes.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -14,6 +15,34 @@ import { gunzipSync, inflateRawSync } from "node:zlib";
 export interface ExtractedFile {
   path: string;
   size: number;
+}
+
+/** Ceilings on what one artifact may expand to. */
+export interface ExtractLimits {
+  maxTotalBytes: number;
+  maxEntries: number;
+}
+
+export const DEFAULT_LIMITS: ExtractLimits = {
+  maxTotalBytes: 512 * 1024 * 1024,
+  maxEntries: 20_000,
+};
+
+function assertWithinBudget(
+  total: number,
+  entries: number,
+  limits: ExtractLimits,
+): void {
+  if (total > limits.maxTotalBytes) {
+    throw new Error(
+      `Archive expands beyond ${limits.maxTotalBytes} bytes. Refusing to extract it.`,
+    );
+  }
+  if (entries > limits.maxEntries) {
+    throw new Error(
+      `Archive holds more than ${limits.maxEntries} entries. Refusing to extract it.`,
+    );
+  }
 }
 
 // ─── Path safety ──────────────────────────────────────────────────────────────
@@ -37,9 +66,11 @@ const TAR_BLOCK = 512;
 export function extractTar(
   buffer: Buffer,
   destination: string,
+  limits: ExtractLimits = DEFAULT_LIMITS,
 ): ExtractedFile[] {
   const written: ExtractedFile[] = [];
   let offset = 0;
+  let totalBytes = 0;
   let pendingLongName: string | undefined;
 
   while (offset + TAR_BLOCK <= buffer.length) {
@@ -77,6 +108,9 @@ export function extractTar(
     }
     if (typeFlag !== "0" && typeFlag !== "\0" && typeFlag !== "") continue;
 
+    totalBytes += body.length;
+    assertWithinBudget(totalBytes, written.length + 1, limits);
+
     const target = join(destination, relative);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, body);
@@ -89,8 +123,17 @@ export function extractTar(
 export function extractTarGz(
   buffer: Buffer,
   destination: string,
+  limits: ExtractLimits = DEFAULT_LIMITS,
 ): ExtractedFile[] {
-  return extractTar(gunzipSync(buffer), destination);
+  let unpacked: Buffer;
+  try {
+    unpacked = gunzipSync(buffer, { maxOutputLength: limits.maxTotalBytes });
+  } catch {
+    throw new Error(
+      `Archive expands beyond ${limits.maxTotalBytes} bytes. Refusing to extract it.`,
+    );
+  }
+  return extractTar(unpacked, destination, limits);
 }
 
 function readString(buffer: Buffer, start: number, length: number): string {
@@ -106,13 +149,14 @@ const CENTRAL_SIGNATURE = 0x02014b50;
 
 /**
  * Reads the central directory (not the local headers) so that entries with
- * streamed sizes — the common case for generated archives — still extract.
+ * streamed sizes, the common case for generated archives, still extract.
  * Supports stored (0) and deflate (8) only, which is everything a generator
  * produces.
  */
 export function extractZip(
   buffer: Buffer,
   destination: string,
+  limits: ExtractLimits = DEFAULT_LIMITS,
 ): ExtractedFile[] {
   const eocd = findEocd(buffer);
   if (eocd === -1)
@@ -121,6 +165,7 @@ export function extractZip(
   const entryCount = buffer.readUInt16LE(eocd + 10);
   let pointer = buffer.readUInt32LE(eocd + 16);
   const written: ExtractedFile[] = [];
+  let totalBytes = 0;
 
   for (let i = 0; i < entryCount; i += 1) {
     if (buffer.readUInt32LE(pointer) !== CENTRAL_SIGNATURE) break;
@@ -156,10 +201,14 @@ export function extractZip(
     if (method === 0) {
       content = raw;
     } else if (method === 8) {
-      content = inflateRawSync(raw);
+      // Header sizes come from the archive, so the budget is the real bound.
+      content = inflate(raw, Math.max(1, limits.maxTotalBytes - totalBytes));
     } else {
       continue;
     }
+
+    totalBytes += content.length;
+    assertWithinBudget(totalBytes, written.length + 1, limits);
 
     const target = join(destination, relative);
     mkdirSync(dirname(target), { recursive: true });
@@ -171,6 +220,17 @@ export function extractZip(
   }
 
   return written;
+}
+
+/** Inflates with a hard ceiling, reporting zlib's own limit error as a refusal. */
+function inflate(raw: Buffer, maxOutputLength: number): Buffer {
+  try {
+    return inflateRawSync(raw, { maxOutputLength });
+  } catch {
+    throw new Error(
+      `Archive expands beyond ${maxOutputLength} bytes. Refusing to extract it.`,
+    );
+  }
 }
 
 function findEocd(buffer: Buffer): number {
@@ -190,18 +250,19 @@ export function extract(
   buffer: Buffer,
   destination: string,
   filename = "",
+  limits: ExtractLimits = DEFAULT_LIMITS,
 ): ExtractedFile[] {
   mkdirSync(destination, { recursive: true });
 
   const isGzip = buffer[0] === 0x1f && buffer[1] === 0x8b;
   const isZip = buffer[0] === 0x50 && buffer[1] === 0x4b;
 
-  if (isGzip) return extractTarGz(buffer, destination);
-  if (isZip) return extractZip(buffer, destination);
-  if (filename.endsWith(".tar")) return extractTar(buffer, destination);
+  if (isGzip) return extractTarGz(buffer, destination, limits);
+  if (isZip) return extractZip(buffer, destination, limits);
+  if (filename.endsWith(".tar")) return extractTar(buffer, destination, limits);
 
   throw new Error(
-    `Unrecognised archive format for ${filename === "" ? "artifact" : filename} — expected .tgz or .zip.`,
+    `Unrecognised archive format for ${filename === "" ? "artifact" : filename}: expected .tgz or .zip.`,
   );
 }
 

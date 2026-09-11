@@ -1,5 +1,5 @@
 /**
- * Framed output — the banner, panels, rules and file trees.
+ * Framed output: the banner, panels, rules and file trees.
  */
 
 import {
@@ -67,13 +67,13 @@ const WORDMARK = [
 ];
 
 /**
- * Brand banner. Outside a TTY it collapses to one line — nobody wants ASCII art
+ * Brand banner. Outside a TTY it collapses to one line. Nobody wants ASCII art
  * in a CI log, and `--json` suppresses it entirely.
  */
 export function banner(subtitle?: string): void {
   if (isQuiet()) return;
   if (isStatic()) {
-    line(`${bold("octri")}${subtitle === undefined ? "" : dim(` — ${subtitle}`)}`);
+    line(`${bold("octri")}${subtitle === undefined ? "" : dim(`: ${subtitle}`)}`);
     return;
   }
   line();
@@ -83,8 +83,8 @@ export function banner(subtitle?: string): void {
 }
 
 /**
- * Reveals text one character at a time. Used sparingly — the banner subtitle
- * and the "build complete" line — and skipped entirely when not interactive.
+ * Reveals text one character at a time. Used sparingly, the banner subtitle
+ * and the "build complete" line, and skipped entirely when not interactive.
  */
 export async function typewriter(text: string, msPerChar = 12): Promise<void> {
   if (isStatic()) {
@@ -102,7 +102,7 @@ export async function typewriter(text: string, msPerChar = 12): Promise<void> {
 
 export interface TreeNode {
   name: string;
-  /** Right-aligned annotation — file size, language, status. */
+  /** Right-aligned annotation, file size, language, status. */
   detail?: string;
   children?: TreeNode[];
 }

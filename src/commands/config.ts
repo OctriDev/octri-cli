@@ -1,5 +1,5 @@
 /**
- * `octri config …` — inspect and edit the stored profile.
+ * `octri config …`: inspect and edit the stored profile.
  */
 
 import { flagString, type ParsedArgs } from "../args.js";

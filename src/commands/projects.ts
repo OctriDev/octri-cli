@@ -1,5 +1,5 @@
 /**
- * `octri projects …` — list, inspect, create, and pick the working project.
+ * `octri projects …`: list, inspect, create, and pick the working project.
  */
 
 import * as api from "../api.js";
@@ -45,7 +45,7 @@ export async function projectsList(ctx: Context): Promise<void> {
           flex: 5,
         },
       ],
-      { emptyMessage: "No projects yet — `octri projects create <name>`." },
+      { emptyMessage: "No projects yet. Run `octri projects create <name>`." },
     );
     if (current !== undefined) {
       line(dim(`  ● = current project (octri projects use <id> to change)`));
@@ -94,7 +94,7 @@ export async function projectsCreate(ctx: Context): Promise<void> {
   });
 }
 
-/** `octri projects use [id]` — with no id, offers an interactive picker. */
+/** `octri projects use [id]`: with no id, offers an interactive picker. */
 export async function projectsUse(ctx: Context): Promise<void> {
   let id = ctx.args.positionals[0];
 

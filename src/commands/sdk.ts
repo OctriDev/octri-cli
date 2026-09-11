@@ -1,9 +1,9 @@
 /**
- * `octri sdk …` — the SDK Studio and the generator, from a terminal.
+ * `octri sdk …`: the SDK Studio and the generator, from a terminal.
  *
  * This is the surface the CLI exists for: trigger builds, watch every language
  * lane live, pull the artifacts down, and read what the generator actually
- * emitted — without opening the dashboard.
+ * emitted, without opening the dashboard.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -117,7 +117,7 @@ export async function sdkSettingsGet(ctx: Context): Promise<void> {
  * `octri sdk settings set <key> <value>` / `--file settings.json`.
  *
  * Reads the current bundle first so the revision guard is satisfied and no
- * unrelated key is dropped — the API replaces `sdkSettings` wholesale.
+ * unrelated key is dropped: the API replaces `sdkSettings` wholesale.
  */
 export async function sdkSettingsSet(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
@@ -201,7 +201,7 @@ export async function sdkOperations(ctx: Context): Promise<void> {
 }
 
 /**
- * `octri sdk preview --lang go [--out dir]` — a real generator run for one
+ * `octri sdk preview --lang go [--out dir]`: a real generator run for one
  * language with no build spent. The fast half of the generator loop.
  */
 export async function sdkPreview(ctx: Context): Promise<void> {
@@ -250,7 +250,7 @@ export async function sdkPreview(ctx: Context): Promise<void> {
       files: files.map((f) => ({ path: f.path, bytes: f.content.length })),
     },
     () => {
-      heading(`${language} ${dim(`— ${files.length} files`)}`);
+      heading(`${language} ${dim(`(${files.length} files)`)}`);
       tree(
         treeFromPaths(
           files.map((f) => ({ path: f.path, detail: bytes(f.content.length) })),
@@ -343,11 +343,11 @@ export async function sdkAudit(ctx: Context): Promise<void> {
       },
       { header: "key", value: (f) => dim(f.key), flex: 4, minWidth: 12 },
     ]);
-    note("octri sdk audit apply <key> — apply one automatic fix");
+    note("octri sdk audit apply <key>: apply one automatic fix");
   });
 }
 
-/** `octri sdk audit apply <key>` — write one fixable finding into the spec. */
+/** `octri sdk audit apply <key>`: write one fixable finding into the spec. */
 export async function sdkAuditApply(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const key = ctx.args.positionals[0];
@@ -359,12 +359,12 @@ export async function sdkAuditApply(ctx: Context): Promise<void> {
   );
   emit(result, () =>
     success(
-      `Applied ${bold(key)} — score now ${bold(`${result.score}/${result.maxScore}`)}`,
+      `Applied ${bold(key)}: score now ${bold(`${result.score}/${result.maxScore}`)}`,
     ),
   );
 }
 
-/** `octri sdk audit ignore <key> [--unignore]` — mute a finding. */
+/** `octri sdk audit ignore <key> [--unignore]`: mute a finding. */
 export async function sdkAuditIgnore(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const key = ctx.args.positionals[0];
@@ -377,7 +377,7 @@ export async function sdkAuditIgnore(ctx: Context): Promise<void> {
   );
   emit(result, () =>
     success(
-      `${ignored ? "Ignored" : "Restored"} ${bold(key)} — score now ${bold(`${result.score}/${result.maxScore}`)}`,
+      `${ignored ? "Ignored" : "Restored"} ${bold(key)}: score now ${bold(`${result.score}/${result.maxScore}`)}`,
     ),
   );
 }
@@ -467,12 +467,12 @@ export async function sdkBuilds(ctx: Context): Promise<void> {
         { header: "trigger", value: (b) => dim(b.trigger), flex: 6 },
         { header: "when", value: (b) => relativeTime(b.createdAt), flex: 5 },
       ],
-      { emptyMessage: "No builds yet — `octri sdk build --lang go`." },
+      { emptyMessage: "No builds yet. Run `octri sdk build --lang go`." },
     );
   });
 }
 
-/** `octri sdk watch <buildId>` — attach the live lane view to a running build. */
+/** `octri sdk watch <buildId>`: attach the live lane view to a running build. */
 export async function sdkWatch(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const buildId = ctx.args.positionals[0];
@@ -547,7 +547,7 @@ export async function sdkRetry(ctx: Context): Promise<void> {
 
   let languages = flagList(ctx.args, "lang");
   if (languages.length === 0) {
-    // Default to exactly the languages that failed — the usual intent.
+    // Default to exactly the languages that failed, the usual intent.
     const build = await api.findBuild(ctx.client, projectId, buildId);
     languages =
       build?.artifacts

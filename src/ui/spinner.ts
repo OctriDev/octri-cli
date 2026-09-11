@@ -13,11 +13,11 @@ import { isStatic, symbols, write, line } from "./output.js";
 // ─── Frame sets ───────────────────────────────────────────────────────────────
 
 export const FRAMES = {
-  /** Default — braille dots, the most legible at small sizes. */
+  /** Default: braille dots, the most legible at small sizes. */
   dots: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-  /** Used while the generator is working — reads as "something is compiling". */
+  /** Used while the generator is working, reads as "something is compiling". */
   pulse: ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "▆", "▅", "▄", "▃", "▂"],
-  /** Long-running remote work — a travelling highlight. */
+  /** Long-running remote work, a travelling highlight. */
   bounce: ["⠈", "⠐", "⠠", "⢀", "⡀", "⠄", "⠂", "⠁"],
   arc: ["◜", "◠", "◝", "◞", "◡", "◟"],
   ascii: ["-", "\\", "|", "/"],
@@ -133,7 +133,7 @@ export interface TaskRow {
   id: string;
   label: string;
   state: TaskState;
-  /** Right-hand detail column — phase names, timings, error summaries. */
+  /** Right-hand detail column, phase names, timings, error summaries. */
   detail?: string | undefined;
 }
 

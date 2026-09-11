@@ -1,5 +1,5 @@
 /**
- * Library entry point — the CLI's building blocks, for anything that wants to
+ * Library entry point: the CLI's building blocks, for anything that wants to
  * script Octri from Node without shelling out (the MCP server is one such
  * consumer, and lives in `./mcp/server.js`).
  */

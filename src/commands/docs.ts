@@ -1,5 +1,5 @@
 /**
- * `octri docs …` and `octri mcp tools` — the documentation and agent-facing
+ * `octri docs …` and `octri mcp tools`: the documentation and agent-facing
  * surfaces a project publishes.
  */
 
@@ -37,7 +37,7 @@ export async function docsPages(ctx: Context): Promise<void> {
         { header: "type", value: (p) => dim(p.type ?? "—"), flex: 5 },
         { header: "updated", value: (p) => relativeTime(p.updatedAt), flex: 5 },
       ],
-      { emptyMessage: "No generated pages — push a spec first." },
+      { emptyMessage: "No generated pages. Push a spec first." },
     );
   });
 }
@@ -89,7 +89,7 @@ export async function docsChangelog(ctx: Context): Promise<void> {
   });
 }
 
-/** `octri mcp tools` — the tool catalogue the project's MCP server exposes. */
+/** `octri mcp tools`: the tool catalogue the project's MCP server exposes. */
 export async function mcpTools(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const tools = await withSpinner("Loading MCP tools", () =>
@@ -121,7 +121,7 @@ export async function mcpTools(ctx: Context): Promise<void> {
  *
  * `--all` drops every fingerprint so the whole site is rewritten. Without it
  * only pages that were never written, or whose spec moved on, are rebuilt.
- * `--clear-overrides` additionally throws away manual edits — without it a
+ * `--clear-overrides` additionally throws away manual edits. Without it a
  * rebuild of an edited page changes what is stored and nothing of what the
  * reader sees, which is exactly what "it did nothing" looks like.
  */
@@ -146,7 +146,7 @@ export async function docsGenerate(ctx: Context): Promise<void> {
         " ",
       ),
     );
-    note("octri specs status <specId> — follow the pipeline");
+    note("octri specs status <specId>: follow the pipeline");
   });
 }
 
@@ -318,7 +318,7 @@ export async function docsVersions(ctx: Context): Promise<void> {
       ],
       {
         emptyMessage:
-          "Nothing published — `octri docs versions publish <specId>`.",
+          "Nothing published. Run `octri docs versions publish <specId>`.",
       },
     );
   });
@@ -384,7 +384,7 @@ export async function docsDomain(ctx: Context): Promise<void> {
   emit(result, () => {
     heading("Docs domain");
     if (result.domain === null) {
-      note("No custom domain — `octri docs domain set docs.example.com`.");
+      note("No custom domain. Run `octri docs domain set docs.example.com`.");
       line(dim(`  CNAME target: ${result.cnameTarget}`));
       return;
     }
@@ -408,7 +408,7 @@ export async function docsDomain(ctx: Context): Promise<void> {
         line(`  ${bold(record.type)} ${record.name}`);
         line(dim(`      ${record.value}`));
       }
-      note("octri docs domain verify — once the records have propagated");
+      note("octri docs domain verify: once the records have propagated");
     }
   });
 }
@@ -429,8 +429,8 @@ export async function docsDomainSet(ctx: Context): Promise<void> {
     api.setCustomDomain(ctx.client, projectId, hostname),
   );
   emit(result, () => {
-    success(`${hostname} registered — now add the DNS records.`);
-    note("octri docs domain — shows the exact CNAME and TXT values");
+    success(`${hostname} registered. Now add the DNS records.`);
+    note("octri docs domain: shows the exact CNAME and TXT values");
   });
 }
 

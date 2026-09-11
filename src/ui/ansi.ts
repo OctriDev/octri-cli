@@ -142,7 +142,7 @@ export function hex(value: string): Wrap {
 
 // ─── Brand palette ────────────────────────────────────────────────────────────
 
-/** Octri's accent ramp — used for banners, gradients and progress fills. */
+/** Octri's accent ramp, used for banners, gradients and progress fills. */
 export const BRAND: readonly string[] = [
   "#7c5cff",
   "#8f5bff",

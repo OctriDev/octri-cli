@@ -1,6 +1,6 @@
 {
   "name": "@octri/cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Command line for Octri. Push OpenAPI specs, build SDKs in ten languages, publish docs, and triage the errors those SDKs report from production. Ships an MCP server so an AI assistant can run the same commands.",
   "keywords": [
     "octri",
@@ -33,7 +33,8 @@
   "files": [
     "dist/**",
     "!dist/**/*.test.*",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public"

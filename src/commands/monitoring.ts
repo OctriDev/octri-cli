@@ -1,5 +1,5 @@
 /**
- * `octri monitoring …` — the monitoring product.
+ * `octri monitoring …`: the monitoring product.
  *
  * Two transports live behind this one group, deliberately:
  *
@@ -124,7 +124,7 @@ export async function monitoringDisable(ctx: Context): Promise<void> {
 }
 
 /**
- * `octri monitoring config` — the ingest credentials, for pasting into CI. The
+ * `octri monitoring config`: the ingest credentials, for pasting into CI. The
  * token is printed only on request, so a screen-shared terminal does not leak it.
  */
 export async function monitoringConfig(ctx: Context): Promise<void> {
@@ -145,7 +145,7 @@ export async function monitoringConfig(ctx: Context): Promise<void> {
           ? dim("—")
           : reveal
             ? config.token
-            : dim("hidden — pass --reveal-token"),
+            : dim("hidden. Pass --reveal-token"),
       ],
     ]);
     note("These are the three values `octri monitoring sourcemaps upload` needs in CI.");
@@ -215,7 +215,7 @@ export async function monitoringIssues(ctx: Context): Promise<void> {
       ],
       { emptyMessage: "No issues in this window." },
     );
-    if (items.length > 0) note("octri monitoring issue <id> — full stack trace");
+    if (items.length > 0) note("octri monitoring issue <id>: full stack trace");
   });
 }
 
@@ -263,7 +263,7 @@ export async function monitoringIssue(ctx: Context): Promise<void> {
         if (frame.contextLine !== undefined) line(dim(`      ${frame.contextLine.trim()}`));
       }
       if (frames.every((f) => f.resolved !== true)) {
-        note("No frame resolved — upload symbols: octri monitoring sourcemaps upload");
+        note("No frame resolved. Upload symbols: octri monitoring sourcemaps upload");
       }
     }
 
@@ -461,7 +461,7 @@ export async function monitoringReleases(ctx: Context): Promise<void> {
         { header: "regressions", value: (r) => String(r.regressions), flex: 7 },
         { header: "last seen", value: (r) => relativeTime(r.lastSeen), flex: 6 },
       ],
-      { emptyMessage: "No releases reported — is `logging.release` set in your SDK?" },
+      { emptyMessage: "No releases reported. Is `logging.release` set in your SDK?" },
     );
   });
 }
@@ -560,7 +560,7 @@ export async function monitoringChecks(ctx: Context): Promise<void> {
         { header: "", value: (c) => (c.enabled ? accent("on") : dim("off")), flex: 9 },
         { header: "last run", value: (c) => relativeTime(c.lastRunAt ?? undefined), flex: 6 },
       ],
-      { emptyMessage: "No checks — generate them from the spec: octri monitoring checks generate" },
+      { emptyMessage: "No checks. Generate them from the spec: octri monitoring checks generate" },
     );
   });
 }
@@ -594,7 +594,7 @@ export async function monitoringCheckGenerate(ctx: Context): Promise<void> {
     const created = result.created ?? 0;
     const updated = result.updated ?? 0;
     if (created + updated === 0) {
-      warn("Nothing generated — every endpoint was skipped.");
+      warn("Nothing generated. Every endpoint was skipped.");
       note("Checks are derived from safe operations only (GET/HEAD).");
       return;
     }
@@ -611,7 +611,7 @@ export async function monitoringTestEvent(ctx: Context): Promise<void> {
   );
   emit(result, () => {
     success("Test event delivered.");
-    note("octri monitoring issues — it should appear within a few seconds.");
+    note("octri monitoring issues: it should appear within a few seconds.");
   });
 }
 

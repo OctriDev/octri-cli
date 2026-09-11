@@ -2,7 +2,7 @@
  * Table rendering.
  *
  * Columns size themselves to their content, then the widest flexible column is
- * squeezed until the whole row fits the terminal — so an id column stays intact
+ * squeezed until the whole row fits the terminal, so an id column stays intact
  * while a long description is the thing that gets an ellipsis.
  */
 

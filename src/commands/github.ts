@@ -1,5 +1,5 @@
 /**
- * `octri github …` — the spec-sync side of the GitHub integration: point a
+ * `octri github …`: the spec-sync side of the GitHub integration: point a
  * project at a spec file in a repo, and every push to it re-ingests.
  *
  * The SDK-publishing side of GitHub lives under `octri sdk repos`, because it
@@ -49,7 +49,7 @@ export async function githubStatus(ctx: Context): Promise<void> {
 }
 
 /**
- * `octri github connect <owner/repo>` — `owner/repo` as one argument because
+ * `octri github connect <owner/repo>`: `owner/repo` as one argument because
  * that is how people copy it out of a browser address bar.
  */
 export async function githubConnect(ctx: Context): Promise<void> {
@@ -77,7 +77,7 @@ export async function githubConnect(ctx: Context): Promise<void> {
   );
   emit(status, () => {
     success(`Connected ${bold(`${owner}/${repo}`)} (${body.branch}:${body.specPath})`);
-    note("octri github sync — pull the spec now");
+    note("octri github sync: pull the spec now");
   });
 }
 
@@ -103,7 +103,7 @@ export async function githubSync(ctx: Context): Promise<void> {
     success(
       version === undefined
         ? "Sync complete."
-        : `Synced — spec is now ${bold(String(version))}.`,
+        : `Synced. Spec is now ${bold(String(version))}.`,
     );
   });
 }
@@ -124,7 +124,7 @@ export async function githubAutoSync(ctx: Context): Promise<void> {
   );
 }
 
-/** `octri github app` — the dashboard-owned App, used for private repos. */
+/** `octri github app`: the dashboard-owned App, used for private repos. */
 export async function githubApp(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const status = await withSpinner("Loading GitHub App status", () =>

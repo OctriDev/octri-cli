@@ -146,7 +146,7 @@ export function emit(value: unknown, render: () => void): void {
 
 // ─── Small composites ─────────────────────────────────────────────────────────
 
-/** Aligned `key  value` block — the workhorse for `show` style commands. */
+/** Aligned `key  value` block, the workhorse for `show` style commands. */
 export function keyValues(
   entries: readonly (readonly [string, string])[],
   indent = "  ",
@@ -185,7 +185,7 @@ export function statusLabel(status: string): string {
   }
 }
 
-/** Human byte size — artifacts are reported in bytes by the API. */
+/** Human byte size. Artifacts are reported in bytes by the API. */
 export function bytes(value: number | undefined): string {
   if (value === undefined) return dim("—");
   const units = ["B", "KB", "MB", "GB"];
@@ -201,7 +201,7 @@ export function bytes(value: number | undefined): string {
 /**
  * Parses a timestamp to epoch ms.
  *
- * ClickHouse — which is what the monitoring service stores events in — renders
+ * ClickHouse, which is what the monitoring service stores events in, renders
  * DateTime64 as `2026-09-04 09:59:19.237`: a space separator and no zone. ECMA-262
  * says a non-conforming string like that is implementation-defined, and Node reads
  * it as *local* time, so every monitoring timestamp came out shifted by the host's
@@ -226,7 +226,7 @@ export function relativeTime(iso: string | undefined): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-/** `1m 12s` from a millisecond span — used by the build timers. */
+/** `1m 12s` from a millisecond span, used by the build timers. */
 export function duration(ms: number): string {
   const secs = Math.round(ms / 1000);
   if (secs < 60) return `${secs}s`;

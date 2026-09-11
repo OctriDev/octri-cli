@@ -1,5 +1,5 @@
 /**
- * `octri auth …` — sign in, inspect the session, sign out.
+ * `octri auth …`: sign in, inspect the session, sign out.
  *
  * The API hands the session back only as Set-Cookie headers, so login parses
  * them and stores the access/refresh pair in the profile. Every later request
@@ -120,14 +120,14 @@ export async function authWhoami(ctx: Context): Promise<void> {
         [
           "project",
           ctx.settings.defaultProject ??
-            dim("none — run `octri projects use <id>`"),
+            dim("none. Run `octri projects use <id>`"),
         ],
       ]);
     },
   );
 }
 
-/** Prints the bearer token — handy for `curl -H "Authorization: Bearer $(octri auth token)"`. */
+/** Prints the bearer token, handy for `curl -H "Authorization: Bearer $(octri auth token)"`. */
 export function authToken(ctx: Context): void {
   const token = ctx.settings.accessToken;
   if (token === undefined) {
@@ -137,7 +137,7 @@ export function authToken(ctx: Context): void {
   process.stdout.write(`${token}\n`);
 }
 
-/** `octri auth profiles` — what is configured on this machine. */
+/** `octri auth profiles`: what is configured on this machine. */
 export function authProfiles(): void {
   const config = readConfig();
   const rows = Object.entries(config.profiles).map(([name, profile]) => ({

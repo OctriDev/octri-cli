@@ -1,5 +1,5 @@
 /**
- * `octri keys …` — the org's API keys, the credential a CI job or a service
+ * `octri keys …`: the org's API keys, the credential a CI job or a service
  * uses instead of a human session.
  *
  * The plaintext key exists in exactly one response, on creation. It is printed
@@ -41,7 +41,7 @@ export async function keysList(ctx: Context): Promise<void> {
         { header: "created by", value: (k) => dim(k.createdBy ?? "—"), flex: 5 },
         { header: "id", value: (k) => dim(k.id), flex: 7, minWidth: 24 },
       ],
-      { emptyMessage: "No API keys — `octri keys create <name>`." },
+      { emptyMessage: "No API keys yet. Run `octri keys create <name>`." },
     );
   });
 }
@@ -60,7 +60,7 @@ export async function keysCreate(ctx: Context): Promise<void> {
     throw new Error("Usage: octri keys create <name> [--expires 2027-01-01]");
   }
 
-  // Accept a plain date as well as a full timestamp — the API wants ISO 8601.
+  // Accept a plain date as well as a full timestamp, the API wants ISO 8601.
   const expires = flagString(ctx.args, "expires");
   const expiresAt =
     expires === undefined

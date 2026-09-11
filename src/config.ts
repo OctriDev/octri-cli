@@ -1,5 +1,5 @@
 /**
- * Persisted CLI state — `~/.octri/config.json`, written 0600 because it holds
+ * Persisted CLI state: `~/.octri/config.json`, written 0600 because it holds
  * session tokens and (optionally) an API key.
  *
  * Profiles let one machine talk to local, staging and production without
@@ -65,6 +65,31 @@ export function cacheDir(): string {
 
 // ─── Read / write ─────────────────────────────────────────────────────────────
 
+/**
+ * Profile names index a plain object and come from flags, env and the config
+ * file, so `__proto__` would reach the prototype instead of a profile.
+ */
+const RESERVED_PROFILE_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+
+export function assertProfileName(name: string): string {
+  if (name === "" || RESERVED_PROFILE_NAMES.has(name)) {
+    throw new Error(`"${name}" is not a usable profile name.`);
+  }
+  return name;
+}
+
+function toProfileMap(input: unknown): Record<string, Profile> {
+  const profiles = Object.create(null) as Record<string, Profile>;
+  if (input === null || typeof input !== "object") return profiles;
+  for (const [name, value] of Object.entries(input)) {
+    if (RESERVED_PROFILE_NAMES.has(name)) continue;
+    if (value !== null && typeof value === "object") {
+      profiles[name] = value as Profile;
+    }
+  }
+  return profiles;
+}
+
 export function readConfig(): ConfigFile {
   try {
     const raw = readFileSync(configPath(), "utf8");
@@ -73,10 +98,10 @@ export function readConfig(): ConfigFile {
     return {
       version: 1,
       current: parsed.current ?? "default",
-      profiles: parsed.profiles,
+      profiles: toProfileMap(parsed.profiles),
     };
   } catch {
-    // A missing or corrupt file is not an error — it is a first run.
+    // A missing or corrupt file is not an error. It is a first run.
     return { ...EMPTY, profiles: { ...EMPTY.profiles } };
   }
 }
@@ -96,7 +121,9 @@ export function writeConfig(config: ConfigFile): void {
 // ─── Resolution ───────────────────────────────────────────────────────────────
 
 export function profileName(explicit?: string): string {
-  return explicit ?? process.env["OCTRI_PROFILE"] ?? readConfig().current;
+  return assertProfileName(
+    explicit ?? process.env["OCTRI_PROFILE"] ?? readConfig().current,
+  );
 }
 
 export function readProfile(explicit?: string): Profile {
@@ -127,6 +154,7 @@ export function updateProfile(
 }
 
 export function useProfile(name: string, apiUrl?: string): Profile {
+  assertProfileName(name);
   const config = readConfig();
   config.profiles[name] ??= { apiUrl: apiUrl ?? DEFAULT_API_URL };
   if (apiUrl !== undefined) {
@@ -185,11 +213,35 @@ export function resolve(overrides: ResolveOverrides = {}): Resolved {
   };
 }
 
+const LOOPBACK_HOST =
+  /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1|0\.0\.0\.0)$/i;
+
+/**
+ * Rejects plaintext HTTP to anywhere but this machine, since every request
+ * carries a session JWT or an API key. `OCTRI_ALLOW_INSECURE_HTTP=1` opts back
+ * in for an internal proxy or similar.
+ */
+function assertTransportSecurity(url: string): void {
+  if (!url.startsWith("http://")) return;
+  if (process.env["OCTRI_ALLOW_INSECURE_HTTP"] === "1") return;
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    throw new Error(`"${url}" is not a valid API URL.`);
+  }
+  if (LOOPBACK_HOST.test(host)) return;
+  throw new Error(
+    `Refusing to send credentials over plaintext HTTP to ${host}. Use https://, or set OCTRI_ALLOW_INSECURE_HTTP=1 if you accept the risk.`,
+  );
+}
+
 /** Accepts `local`, a bare host, or a full URL; always returns an /api/v1 root. */
 export function normalizeApiUrl(input: string): string {
   if (input === "local" || input === "localhost") return LOCAL_API_URL;
   let url = input.trim().replace(/\/+$/, "");
   if (!/^https?:\/\//.test(url)) url = `https://${url}`;
   if (!url.endsWith("/api/v1")) url = `${url}/api/v1`;
+  assertTransportSecurity(url);
   return url;
 }

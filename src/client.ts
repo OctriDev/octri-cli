@@ -43,7 +43,7 @@ export class NotAuthenticatedError extends Error {
 
 /**
  * Pulls a named cookie out of a response's Set-Cookie headers. Login returns
- * the session only as cookies — the JSON body carries user/org, not tokens — so
+ * the session only as cookies (the JSON body carries user/org, not tokens), so
  * this is how the CLI acquires a bearer token in the first place.
  */
 export function cookieFrom(
@@ -75,7 +75,7 @@ export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
-  /** Skips auth headers — used by /auth/login itself. */
+  /** Skips auth headers, used by /auth/login itself. */
   anonymous?: boolean;
   /** Returns the raw Response instead of parsed JSON (artifact downloads). */
   raw?: boolean;
@@ -130,7 +130,7 @@ export class OctriClient {
     return this.unwrap<T>(response, path, options);
   }
 
-  /** GET that returns the raw Response — for streaming artifact downloads. */
+  /** GET that returns the raw Response, for streaming artifact downloads. */
   async fetchRaw(url: string): Promise<Response> {
     const target = new URL(url);
     const api = new URL(this.settings.apiUrl);
@@ -215,7 +215,7 @@ export class OctriClient {
         );
       }
       throw new ApiError(
-        `Cannot reach ${this.settings.apiUrl} — ${(err as Error).message}`,
+        `Cannot reach ${this.settings.apiUrl}: ${(err as Error).message}`,
         0,
         "NETWORK",
         undefined,
@@ -374,7 +374,7 @@ export async function login(
   const accessToken = cookieFrom(response, "access_token");
   if (accessToken === undefined) {
     throw new Error(
-      "Login succeeded but no session cookie was returned — is this an Octri API?",
+      "Login succeeded but no session cookie was returned. Is this an Octri API?",
     );
   }
   if (!hasSessionIdentity(payload)) {

@@ -1,5 +1,5 @@
 /**
- * The `octri` router — parse, route, render.
+ * The `octri` router: parse, route, render.
  *
  * Global flags are applied before anything runs so `--json` suppresses even the
  * banner, and every error funnels through one handler that knows how to turn an
@@ -368,7 +368,7 @@ export async function run(argv: readonly string[]): Promise<void> {
 // ─── Error handling ───────────────────────────────────────────────────────────
 
 export function report(err: unknown): void {
-  // Always restore the cursor — a spinner may have hidden it mid-flight.
+  // Always restore the cursor, a spinner may have hidden it mid-flight.
   write(cursor.show);
 
   if (err instanceof NotAuthenticatedError) {

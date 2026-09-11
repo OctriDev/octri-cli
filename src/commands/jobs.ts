@@ -1,5 +1,5 @@
 /**
- * `octri jobs` — the background generation queue behind a project.
+ * `octri jobs`: the background generation queue behind a project.
  *
  * Worth its own command because the spec-status view only covers one spec's
  * pipeline: a single-endpoint rebuild triggered from the studio is a job with

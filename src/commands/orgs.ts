@@ -1,5 +1,5 @@
 /**
- * `octri orgs …` — the organisation behind the session: who is in it, who has
+ * `octri orgs …`: the organisation behind the session: who is in it, who has
  * been invited, what it is using, and what it is being charged.
  *
  * Every route here is scoped to the session's *active* org, so `orgs switch`
@@ -201,7 +201,7 @@ export async function orgsInvoices(ctx: Context): Promise<void> {
 }
 
 /**
- * `octri orgs switch <id>` — swaps the session onto another org. The API mints
+ * `octri orgs switch <id>`: swaps the session onto another org. The API mints
  * a fresh token pair, so the stored profile is rewritten rather than reused.
  */
 export async function orgsSwitch(ctx: Context): Promise<void> {
@@ -221,7 +221,7 @@ export async function orgsSwitch(ctx: Context): Promise<void> {
     api.switchOrg(ctx.client, orgId),
   );
 
-  // Switching orgs invalidates the selected project — it belonged to the old one.
+  // Switching orgs invalidates the selected project. It belonged to the old one.
   updateProfile(
     {
       ...(tokens.accessToken === undefined
@@ -237,7 +237,7 @@ export async function orgsSwitch(ctx: Context): Promise<void> {
 
   emit({ orgId, switched: true }, () => {
     success(`Now acting as ${bold(orgId)}`);
-    note("octri projects use — pick a project in this organisation");
+    note("octri projects use: pick a project in this organisation");
   });
 }
 

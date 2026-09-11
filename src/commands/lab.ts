@@ -1,5 +1,5 @@
 /**
- * `octri lab …` — the generator iteration loop.
+ * `octri lab …`: the generator iteration loop.
  *
  * `lab run` is one command for the whole cycle: build every requested language,
  * watch the lanes, pull the artifacts down, extract them, and print a per-language
@@ -59,7 +59,7 @@ interface LanguageOutcome {
   errorMessage?: string;
   files: number;
   totalBytes: number;
-  /** Content hash of the emitted tree — the unit `lab diff` compares. */
+  /** Content hash of the emitted tree, the unit `lab diff` compares. */
   fingerprint?: string;
   path?: string;
 }
@@ -113,7 +113,7 @@ export async function labRun(ctx: Context): Promise<void> {
   line(dim(`  project ${projectId}`));
   line();
 
-  // 1. Validate first — a spec the generator rejects wastes a whole build.
+  // 1. Validate first: a spec the generator rejects wastes a whole build.
   if (!flagBool(ctx.args, "skip-validate")) {
     const validation = await withSpinner(
       "Validating spec",
@@ -214,7 +214,7 @@ export async function labRun(ctx: Context): Promise<void> {
   if (failed.length > 0) process.exitCode = 1;
 }
 
-/** `octri lab pull <buildId>` — fetch + extract a build that already ran. */
+/** `octri lab pull <buildId>`: fetch + extract a build that already ran. */
 export async function labPull(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const buildId = ctx.args.positionals[0];
@@ -246,7 +246,7 @@ export async function labPull(ctx: Context): Promise<void> {
   emit(manifest, () => renderRunReport(manifest, destination));
 }
 
-/** `octri lab runs` — what is cached locally for this project. */
+/** `octri lab runs`: what is cached locally for this project. */
 export function labRuns(ctx: Context): void {
   const projectId = ctx.projectId();
   const root = labRoot(projectId);
@@ -296,13 +296,13 @@ export function labRuns(ctx: Context): void {
         },
         { header: "when", value: (r) => relativeTime(r.finishedAt), flex: 5 },
       ],
-      { emptyMessage: "No cached runs — `octri lab run --lang go`." },
+      { emptyMessage: "No cached runs. Run `octri lab run --lang go`." },
     );
     if (runs.length > 0) note(`Cached under ${root}`);
   });
 }
 
-/** `octri lab files <buildId> --lang go` — the emitted tree for one language. */
+/** `octri lab files <buildId> --lang go`: the emitted tree for one language. */
 export function labFiles(ctx: Context): void {
   const projectId = ctx.projectId();
   const buildId = ctx.args.positionals[0];
@@ -323,7 +323,7 @@ export function labFiles(ctx: Context): void {
   }));
 
   emit({ buildId, language, root, files }, () => {
-    heading(`${language} ${dim(`— ${files.length} files`)}`);
+    heading(`${language} ${dim(`(${files.length} files)`)}`);
     tree(
       treeFromPaths(
         files.map((f) => ({ path: f.path, detail: bytes(f.size) })),

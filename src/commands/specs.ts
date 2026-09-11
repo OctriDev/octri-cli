@@ -1,5 +1,5 @@
 /**
- * `octri specs …` — the spec side of the loop: push a spec in, watch it parse,
+ * `octri specs …`: the spec side of the loop: push a spec in, watch it parse,
  * inspect what the parser made of it.
  */
 
@@ -58,13 +58,13 @@ export async function specsList(ctx: Context): Promise<void> {
         },
         { header: "created", value: (s) => relativeTime(s.createdAt), flex: 5 },
       ],
-      { emptyMessage: "No specs — `octri specs push <file>`." },
+      { emptyMessage: "No specs yet. Run `octri specs push <file>`." },
     );
   });
 }
 
 /**
- * `octri specs push <file|->` — uploads spec text and, unless `--no-wait`,
+ * `octri specs push <file|->`: uploads spec text and, unless `--no-wait`,
  * follows the ingestion job to completion.
  */
 export async function specsPush(ctx: Context): Promise<void> {
@@ -96,7 +96,7 @@ export async function specsPush(ctx: Context): Promise<void> {
   });
 }
 
-/** `octri specs import <url>` — pull a spec straight from a public URL. */
+/** `octri specs import <url>`: pull a spec straight from a public URL. */
 export async function specsImport(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const url = ctx.args.positionals[0] ?? flagString(ctx.args, "url");
@@ -210,7 +210,7 @@ async function followIngestion(
       const seconds = Math.round(spinner.elapsed() / 1000);
       if (overallStatus === "partial" || anyFailed) {
         spinner.warnWith(`Spec ready with failures ${dim(`in ${seconds}s`)}`);
-        note("octri specs status <specId> — which job failed");
+        note("octri specs status <specId>: which job failed");
       } else {
         spinner.succeed(`Spec ready ${dim(`in ${seconds}s`)}`);
       }
@@ -218,7 +218,7 @@ async function followIngestion(
     }
   }
 
-  spinner.warnWith("Still processing — check `octri specs status <specId>` later.");
+  spinner.warnWith("Still processing. Check `octri specs status <specId>` later.");
   line();
 }
 

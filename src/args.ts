@@ -16,7 +16,7 @@ export interface ParsedArgs {
   rest: string[];
 }
 
-/** Flags that take no value — needed to disambiguate `--watch build-id`. */
+/** Flags that take no value, needed to disambiguate `--watch build-id`. */
 const BOOLEAN_FLAGS = new Set([
   "help",
   "version",

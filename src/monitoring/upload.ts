@@ -1,5 +1,5 @@
 /**
- * Symbolication artifact uploads — source maps for minifying toolchains, source
+ * Symbolication artifact uploads: source maps for minifying toolchains, source
  * bundles for compiled languages.
  *
  * These POST straight at the monitoring service with the project's ingest token
@@ -43,7 +43,7 @@ interface SourceMapFile {
 }
 
 // ── Bounded upload retry ─────────────────────────────────────────────────────
-// 429 (monitoring ingress burst ceiling) and 503 are transient — retry with a
+// 429 (monitoring ingress burst ceiling) and 503 are transient. Retry with a
 // backoff that honours Retry-After so a CI upload rides out a short throttle
 // instead of failing the build. Bounded attempts: after the cap the response is
 // returned as-is and the caller surfaces it (never a hot-loop, never silent).
@@ -206,7 +206,7 @@ export async function uploadSourceMaps(options: UploadOptions): Promise<UploadRe
 // Compiled stack frames (Go, Rust, Java/Kotlin, Swift, …) already carry their
 // original file + line, but a production binary ships without the source TEXT.
 // Uploading a source bundle per release lets the dashboard show the original
-// code at each frame — the compiled-language analog of source maps.
+// code at each frame, the compiled-language analog of source maps.
 
 /** Source extensions collected by `sources upload` when none are given. */
 export const SOURCE_EXTENSIONS = [
@@ -281,7 +281,7 @@ async function findSourceFiles(paths: string[], extensions: string[]): Promise<s
 
 /**
  * Finds source files under `paths` and uploads them to the monitoring service,
- * keyed by `(environment, release, path)` — the path kept relative to cwd so it
+ * keyed by `(environment, release, path)`: the path kept relative to cwd so it
  * can suffix-match a frame's absolute build path. Returns the uploaded files and
  * the count the service stored.
  */

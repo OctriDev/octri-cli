@@ -1,5 +1,5 @@
 /**
- * Help text. Grouped by workflow rather than alphabetically — the generator
+ * Help text. Grouped by workflow rather than alphabetically, the generator
  * loop is what most sessions are actually doing.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Progress rendering — bars, sparklines and the gradient "shimmer" used while a
+ * Progress rendering: bars, sparklines and the gradient "shimmer" used while a
  * remote job reports no percentage at all (the SDK generator reports phases,
  * not completion ratios, for most of a build).
  */
@@ -68,7 +68,7 @@ export function shimmer(tick: number, width = 24): string {
   return gradient(track);
 }
 
-/** Sparkline over a numeric series — used for build durations and usage. */
+/** Sparkline over a numeric series, used for build durations and usage. */
 export function sparkline(values: readonly number[]): string {
   if (values.length === 0) return "";
   const glyphs = hasUnicode

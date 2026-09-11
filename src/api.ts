@@ -7,7 +7,7 @@
  *
  * Route split (see the repo's CLAUDE.md): client-facing project/spec/SDK-build
  * routes live under `routes/v1`, while Studio-shaped routes (settings, live
- * operations, preview, repos) are the dashboard's own — both are mounted under
+ * operations, preview, repos) are the dashboard's own. Both are mounted under
  * the same `/api/v1` prefix, so they share one client.
  */
 
@@ -217,7 +217,7 @@ export async function listSpecs(
 
 /**
  * Uploads spec text. Goes through `/specs/raw` rather than the multipart
- * `/specs/upload` route — same ingestion pipeline, no multipart encoding to
+ * `/specs/upload` route, same ingestion pipeline, no multipart encoding to
  * hand-roll, and it works identically for JSON and YAML.
  */
 export interface SpecIngestResult {
@@ -254,7 +254,7 @@ export function importSpecUrl(
 
 /**
  * Ingestion progress. Note the nesting: the spec's own row status and the
- * generation pipeline's roll-up are separate — a spec can be `complete` while
+ * generation pipeline's roll-up are separate: a spec can be `complete` while
  * its doc pages are still being written.
  */
 export interface SpecStatus {
@@ -333,8 +333,8 @@ export function getSdkSettings(
 }
 
 /**
- * Publishes the Studio draft. `revision` is an optimistic-concurrency guard —
- * pass the value from a fresh `getSdkSettings`, or the API rejects the write.
+ * Publishes the Studio draft. `revision` is an optimistic-concurrency guard.
+ * Pass the value from a fresh `getSdkSettings`, or the API rejects the write.
  */
 export function putSdkSettings(
   client: OctriClient,
@@ -414,7 +414,7 @@ export interface AuditResult {
   surface: { operations: number; models: number };
 }
 
-/** Spec-quality report. A read — the generator scores the stored spec in place. */
+/** Spec-quality report. A read: the generator scores the stored spec in place. */
 export function auditSdk(
   client: OctriClient,
   projectId: string,
@@ -740,7 +740,7 @@ export async function watchBuild(
 // Every read and write here goes through the dashboard's monitoring proxy, which
 // scopes the call to the project's `environment` and keeps the platform's
 // internal token server-side. The CLI therefore never holds a monitoring
-// credential for these — only the artifact uploads use the project ingest token,
+// credential for these, only the artifact uploads use the project ingest token,
 // and those talk to the monitoring service directly (see `./monitoring/upload.js`).
 
 export interface MonitoringConnection {
@@ -1101,7 +1101,7 @@ export function runMonitoringCheck(
 
 /**
  * Derives one check per endpoint from the current spec. `baseUrl` is only needed
- * when the spec declares no absolute server URL — otherwise the first server wins.
+ * when the spec declares no absolute server URL. Otherwise the first server wins.
  */
 export function generateMonitoringChecks(
   client: OctriClient,
@@ -1210,7 +1210,7 @@ export interface Invoice {
 /**
  * Orgs the signed-in user belongs to.
  *
- * There is no `GET /orgs` collection route — org membership is part of the
+ * There is no `GET /orgs` collection route. Org membership is part of the
  * session, so the switcher (and this) reads it off `/auth/me`. The plan is only
  * known for the *active* org, which is why it is blank for the others.
  */
