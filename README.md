@@ -231,7 +231,7 @@ assistant can read the message and correct itself.
 [Swift](https://github.com/octridev/octri-swift) ·
 [Dart](https://github.com/octridev/octri-dart)
 
-[Documentation](https://docs.octri.dev/docs/guides/cli/overview) ·
+[Documentation](https://docs.octri.dev/cli/overview) ·
 [Pricing](https://octri.dev/pricing) ·
 [Changelog](https://docs.octri.dev/changelog)
 
