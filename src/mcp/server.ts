@@ -36,6 +36,7 @@ import * as api from "../api.js";
 import { extract, safeArtifactFilename } from "../archive.js";
 import { OctriClient } from "../client.js";
 import { cacheDir, resolve, type Resolved } from "../config.js";
+import { CLI_VERSION } from "../version.js";
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
@@ -929,13 +930,8 @@ function walk(root: string): string[] {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-export async function serve(options: ServeOptions): Promise<void> {
-  const settings = resolve({
-    ...(options.profile === undefined ? {} : { profile: options.profile }),
-    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-    ...(options.project === undefined ? {} : { project: options.project }),
-  });
-
+/** The server with every tool registered, not yet bound to a transport. */
+export function createServer(settings: Resolved, options: ServeOptions): Server {
   const ctx: ToolContext = {
     settings,
     client: new OctriClient(settings),
@@ -943,7 +939,7 @@ export async function serve(options: ServeOptions): Promise<void> {
   };
 
   const server = new Server(
-    { name: "octri-cli", version: "0.1.0" },
+    { name: "octri-cli", version: CLI_VERSION },
     { capabilities: { tools: {} } },
   );
 
@@ -974,6 +970,17 @@ export async function serve(options: ServeOptions): Promise<void> {
       };
     }
   });
+
+  return server;
+}
+
+export async function serve(options: ServeOptions): Promise<void> {
+  const settings = resolve({
+    ...(options.profile === undefined ? {} : { profile: options.profile }),
+    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+    ...(options.project === undefined ? {} : { project: options.project }),
+  });
+  const server = createServer(settings, options);
 
   // stdio only: stdout is the protocol channel, so nothing else may write there.
   await server.connect(new StdioServerTransport());

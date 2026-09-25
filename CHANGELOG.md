@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.4
+
+- The MCP server (`octri mcp serve`) reports the CLI's real version in its
+  handshake. It said `0.1.0` in every release, so MCP clients showed the wrong
+  version. `octri --version` was already right, and both now read the same
+  value from `package.json`.
+
 ## 1.0.3
 
 - Listed in the official MCP Registry as `dev.octri/cli`. `package.json` carries
