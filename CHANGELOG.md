@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+- Listed in the official MCP Registry as `dev.octri/cli`. `package.json` carries
+  the `mcpName` the registry checks ownership against, and `server.json`
+  describes `octri mcp serve` and its environment variables for clients that
+  install from the registry. No change to the CLI itself.
+
 ## 1.0.2
 
 - Artifact extraction has a budget: 512 MB expanded, 20,000 entries, with zlib

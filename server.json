@@ -1,0 +1,66 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.octri/cli",
+  "title": "Octri CLI",
+  "description": "Push OpenAPI specs, build SDKs in ten languages, publish API docs, and triage production SDK errors.",
+  "websiteUrl": "https://octri.dev",
+  "repository": {
+    "url": "https://github.com/octridev/octri-cli",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://octri.dev/logo/octri_favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    },
+    {
+      "src": "https://octri.dev/logo/octri_favicon_192.png",
+      "mimeType": "image/png",
+      "sizes": ["192x192"]
+    }
+  ],
+  "version": "1.0.3",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@octri/cli",
+      "version": "1.0.3",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        },
+        {
+          "type": "positional",
+          "value": "serve"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "OCTRI_API_KEY",
+          "description": "Octri API key. Not needed if you have signed in with `octri auth login`.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "OCTRI_PROJECT_ID",
+          "description": "Project to use when a tool call names none. Defaults to the CLI's selected project.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "OCTRI_PROFILE",
+          "description": "Stored CLI profile to use instead of the current one.",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

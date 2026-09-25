@@ -1,6 +1,7 @@
 {
   "name": "@octri/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
+  "mcpName": "dev.octri/cli",
   "description": "Command line for Octri. Push OpenAPI specs, build SDKs in ten languages, publish docs, and triage the errors those SDKs report from production. Ships an MCP server so an AI assistant can run the same commands.",
   "keywords": [
     "octri",
