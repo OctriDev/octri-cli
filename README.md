@@ -171,6 +171,16 @@ This speaks MCP over stdio and offers the same commands as typed tools. An
 assistant can push a spec, wait for the build, read the generated Go, and then
 read the production error that build caused.
 
+To add it to Cursor or VS Code in one click, through `npx` so no global install
+is needed:
+
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=octri&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvY3RyaS9jbGkiLCJtY3AiLCJzZXJ2ZSJdfQ%3D%3D)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=octri&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40octri%2Fcli%22%2C%22mcp%22%2C%22serve%22%5D%7D)
+
+The server uses the profile from `octri auth login`, so sign in first, or set
+`OCTRI_API_KEY` in its environment. Listed in the official MCP Registry as
+`dev.octri/cli`.
+
 ```jsonc
 // Claude Desktop / Cursor
 {
