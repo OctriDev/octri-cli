@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.5
+
+- The MCP server's generated-file tools (`octri_list_generated_files`,
+  `octri_read_generated_file`, `octri_diff_builds`, `octri_fetch_artifacts`)
+  only accept ids the API issues and language ids, and never read outside the
+  local artifact cache. A `build_id` such as `../../..` used to list and read any
+  file your user could, `~/.octri/config.json` included, and an agent can be
+  steered into sending one by text it has read.
+- Signs in against the API's `__Host-` session cookies, and still works with
+  APIs that send the older names.
+
 ## 1.0.4
 
 - The MCP server (`octri mcp serve`) reports the CLI's real version in its

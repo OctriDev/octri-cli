@@ -69,6 +69,21 @@ export function cookieFrom(
   return undefined;
 }
 
+/**
+ * A session cookie from a login or refresh response. The API names them
+ * `__Host-access_token` / `__Host-refresh_token` in production and uses the
+ * bare names in local development; older APIs only sent the bare names.
+ */
+export function sessionCookieFrom(
+  response: Response,
+  kind: "access" | "refresh",
+): string | undefined {
+  return (
+    cookieFrom(response, `__Host-${kind}_token`) ??
+    cookieFrom(response, `${kind}_token`)
+  );
+}
+
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 export interface RequestOptions {
@@ -272,14 +287,16 @@ export class OctriClient {
       method: "POST",
       headers: {
         Accept: "application/json",
-        Cookie: `refresh_token=${refreshToken}`,
+        // Both names: the API reads `__Host-refresh_token`, and APIs from
+        // before the prefix read `refresh_token`.
+        Cookie: `__Host-refresh_token=${refreshToken}; refresh_token=${refreshToken}`,
       },
     });
     if (!response.ok) return false;
 
-    const access = cookieFrom(response, "access_token");
+    const access = sessionCookieFrom(response, "access");
     if (access === undefined) return false;
-    const nextRefresh = cookieFrom(response, "refresh_token") ?? refreshToken;
+    const nextRefresh = sessionCookieFrom(response, "refresh") ?? refreshToken;
 
     this.accessToken = access;
     if (this.persist) {
@@ -371,7 +388,7 @@ export async function login(
 
   if (payload?.mfaRequired === true) return payload as MfaChallenge;
 
-  const accessToken = cookieFrom(response, "access_token");
+  const accessToken = sessionCookieFrom(response, "access");
   if (accessToken === undefined) {
     throw new Error(
       "Login succeeded but no session cookie was returned. Is this an Octri API?",
@@ -385,7 +402,7 @@ export async function login(
     user: payload.user,
     org: payload.org,
     accessToken,
-    refreshToken: cookieFrom(response, "refresh_token"),
+    refreshToken: sessionCookieFrom(response, "refresh"),
   };
 }
 
@@ -415,7 +432,7 @@ export async function completeMfa(
     );
   }
 
-  const accessToken = cookieFrom(response, "access_token");
+  const accessToken = sessionCookieFrom(response, "access");
   if (accessToken === undefined) {
     throw new Error("MFA challenge succeeded but no session cookie came back.");
   }
@@ -429,6 +446,6 @@ export async function completeMfa(
     user: payload.user,
     org: payload.org,
     accessToken,
-    refreshToken: cookieFrom(response, "refresh_token"),
+    refreshToken: sessionCookieFrom(response, "refresh"),
   };
 }

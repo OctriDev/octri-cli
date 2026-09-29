@@ -22,7 +22,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve as resolvePath, sep } from "node:path";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -780,8 +780,41 @@ async function dispatch(
 
 // ─── Local artifact cache (shared with `octri lab`) ───────────────────────────
 
+// The ids below come from an agent, and an agent can be steered by text it has
+// read (a spec description, a monitoring issue a user wrote). Joined into a path
+// unchecked, `build_id: "../../.."` listed and read any file this user can,
+// ~/.octri/config.json with the session and API key included.
+
+/** Ids the API issues. Anything else is refused before it reaches a path. */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** SDK language ids: `typescript`, `python`, `go`… */
+const SAFE_LANGUAGE = /^[a-z][a-z0-9-]{0,31}$/;
+
+function pathSegment(value: string, pattern: RegExp, what: string): string {
+  if (!pattern.test(value)) throw new Error(`Invalid ${what}: ${JSON.stringify(value)}.`);
+  return value;
+}
+
+/** Refuses any path that resolves outside the local artifact cache. */
+function insideLabCache(path: string): string {
+  const root = resolvePath(cacheDir(), "lab");
+  const full = resolvePath(path);
+  if (!full.startsWith(root + sep)) {
+    throw new Error("That path is outside the local artifact cache.");
+  }
+  return full;
+}
+
 function runDir(projectId: string, buildId: string): string {
-  return join(cacheDir(), "lab", projectId, buildId);
+  return insideLabCache(
+    join(
+      cacheDir(),
+      "lab",
+      pathSegment(projectId, SAFE_ID, "project_id"),
+      pathSegment(buildId, SAFE_ID, "build_id"),
+    ),
+  );
 }
 
 function languageDir(
@@ -789,7 +822,9 @@ function languageDir(
   buildId: string,
   language: string,
 ): string {
-  return join(runDir(projectId, buildId), language);
+  return insideLabCache(
+    join(runDir(projectId, buildId), pathSegment(language, SAFE_LANGUAGE, "language")),
+  );
 }
 
 async function fetchArtifacts(
@@ -822,9 +857,16 @@ async function fetchArtifacts(
       });
       continue;
     }
+    // The language comes from the API's response; it names a directory too.
+    let target: string;
+    try {
+      target = languageDir(projectId, buildId, artifact.language);
+    } catch (err) {
+      results.push({ language: artifact.language, ok: false, reason: (err as Error).message });
+      continue;
+    }
     const response = await ctx.client.fetchRaw(artifact.url);
     const buffer = Buffer.from(await response.arrayBuffer());
-    const target = join(destination, artifact.language);
 
     try {
       const files = extract(buffer, target, safeArtifactFilename(artifact.url));

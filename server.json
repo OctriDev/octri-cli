@@ -20,12 +20,12 @@
       "sizes": ["192x192"]
     }
   ],
-  "version": "1.0.4",
+  "version": "1.0.5",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@octri/cli",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
