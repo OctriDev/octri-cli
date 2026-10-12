@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.6
+
+- The CLI and `octri mcp serve` honour `HTTPS_PROXY`, `HTTP_PROXY` and
+  `NO_PROXY` (either case). Node's built-in fetch ignores them unless
+  `NODE_USE_ENV_PROXY=1` is set, and older Node releases (22.11, for one)
+  ignore them even then, so a CI runner that only reaches the internet through
+  a proxy timed out. Requests now go through undici's proxy agent whenever one
+  of the proxy variables is set; without one nothing changes and undici is not
+  loaded. Tested on Node 20.0, 20.20, 22.11, 22.23, 24.21 and 26.11.
+- `server.json` lists `HTTPS_PROXY` and `NO_PROXY`, since MCP clients start
+  servers with a minimal environment and rarely pass a shell's proxy through.
+- Network errors name the cause (a refused connection, a DNS miss, a proxy's
+  407) instead of a bare `fetch failed`.
+
 ## 1.0.5
 
 - The MCP server's generated-file tools (`octri_list_generated_files`,

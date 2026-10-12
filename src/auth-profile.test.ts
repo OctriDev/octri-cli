@@ -8,9 +8,14 @@ import { parse } from "./args.js";
 import { OctriClient } from "./client.js";
 import { authLogin } from "./commands/auth.js";
 import { readConfig, writeConfig } from "./config.js";
+import { PROXY_VARIABLES } from "./proxy.js";
 import { configureOutput } from "./ui/output.js";
 
 import type { Context } from "./context.js";
+
+// This file stubs the built-in fetch. A proxy variable in the shell running the
+// tests would send requests through undici instead and past the stub.
+for (const name of PROXY_VARIABLES) delete process.env[name];
 
 test("auth login persists credentials only to the selected profile", async () => {
   const root = mkdtempSync(join(tmpdir(), "octri-cli-auth-profile-"));

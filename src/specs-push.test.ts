@@ -7,9 +7,14 @@ import test from "node:test";
 import { parse } from "./args.js";
 import { OctriClient } from "./client.js";
 import { specsPush } from "./commands/specs.js";
+import { PROXY_VARIABLES } from "./proxy.js";
 import { configureOutput } from "./ui/output.js";
 
 import type { Context } from "./context.js";
+
+// This file stubs the built-in fetch. A proxy variable in the shell running the
+// tests would send requests through undici instead and past the stub.
+for (const name of PROXY_VARIABLES) delete process.env[name];
 
 test("specs push accepts the flat V1 ingestion response", async () => {
   const root = mkdtempSync(join(tmpdir(), "octri-cli-spec-push-"));

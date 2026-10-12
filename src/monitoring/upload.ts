@@ -14,6 +14,8 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 
+import { fetchWithProxy } from "../proxy.js";
+
 export interface UploadOptions {
   /** Monitoring base URL, e.g. https://monitoring.example.com. */
   url: string;
@@ -73,7 +75,7 @@ async function postJsonWithRetry(
   body: string,
 ): Promise<Response> {
   for (let attempt = 1; ; attempt += 1) {
-    const res = await fetch(endpoint, { method: "POST", headers, body });
+    const res = await fetchWithProxy(endpoint, { method: "POST", headers, body });
     if (res.ok || !RETRYABLE_UPLOAD_STATUSES.has(res.status) || attempt >= MAX_UPLOAD_ATTEMPTS) {
       return res;
     }

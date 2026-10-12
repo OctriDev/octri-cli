@@ -4,9 +4,14 @@ import test from "node:test";
 import { parse } from "./args.js";
 import { OctriClient } from "./client.js";
 import { sdkRepoDisplay, sdkReposInit } from "./commands/sdk.js";
+import { PROXY_VARIABLES } from "./proxy.js";
 import { configureOutput } from "./ui/output.js";
 
 import type { Context } from "./context.js";
+
+// This file stubs the built-in fetch. A proxy variable in the shell running the
+// tests would send requests through undici instead and past the stub.
+for (const name of PROXY_VARIABLES) delete process.env[name];
 
 test("nested SDK repository responses render their staging target", () => {
   assert.deepEqual(

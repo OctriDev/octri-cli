@@ -20,12 +20,12 @@
       "sizes": ["192x192"]
     }
   ],
-  "version": "1.0.5",
+  "version": "1.0.6",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@octri/cli",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -57,6 +57,19 @@
         {
           "name": "OCTRI_PROFILE",
           "description": "Stored CLI profile to use instead of the current one.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "HTTPS_PROXY",
+          "description": "Proxy for requests to Octri, e.g. http://proxy.internal:3128. Needed behind a corporate proxy, since MCP clients rarely pass your shell's environment through.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "NO_PROXY",
+          "description": "Comma-separated hosts that skip HTTPS_PROXY.",
           "isRequired": false,
           "format": "string"
         }

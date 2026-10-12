@@ -7,6 +7,11 @@ import test from "node:test";
 import { listArtifacts } from "./api.js";
 import { extract, safeArtifactFilename } from "./archive.js";
 import { ApiError, OctriClient } from "./client.js";
+import { PROXY_VARIABLES } from "./proxy.js";
+
+// This file stubs the built-in fetch. A proxy variable in the shell running the
+// tests would send requests through undici instead and past the stub.
+for (const name of PROXY_VARIABLES) delete process.env[name];
 
 test("artifact downloads request authenticated direct delivery", async () => {
   const originalFetch = globalThis.fetch;

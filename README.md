@@ -161,6 +161,25 @@ Every value resolves flag first, then environment, then the stored profile.
 | `OCTRI_CONFIG_DIR` | Where config and the artifact cache live |
 | `OCTRI_DEBUG` | Print stack traces on failure |
 
+### Behind a proxy
+
+The CLI and `octri mcp serve` read the standard proxy variables, in upper or
+lower case, with no extra Node flag. `https://` requests use `HTTPS_PROXY`, or
+`HTTP_PROXY` when that is the only one set. Hosts listed in `NO_PROXY`, and
+their subdomains, connect directly; `*` turns the proxy off.
+
+```bash
+export HTTPS_PROXY=http://user:password@proxy.internal:3128
+export NO_PROXY=localhost,127.0.0.1,corp.example
+octri specs push ./openapi.yaml
+```
+
+If the proxy inspects TLS with its own certificate authority, point Node at
+that CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`.
+
+MCP clients usually start servers with a minimal environment, so set these in
+the server's `env` block rather than relying on your shell.
+
 ## MCP server
 
 ```bash

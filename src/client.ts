@@ -11,6 +11,7 @@
  */
 
 import { updateProfile, type Resolved } from "./config.js";
+import { fetchWithProxy } from "./proxy.js";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,22 @@ export class NotAuthenticatedError extends Error {
     super("Not signed in. Run `octri auth login` first.");
     this.name = "NotAuthenticatedError";
   }
+}
+
+/**
+ * fetch rejects with a flat "fetch failed" and keeps what went wrong (a refused
+ * connection, a DNS miss, a proxy's 407) on `cause`, sometimes nested.
+ */
+function describeFailure(err: unknown): string {
+  const messages: string[] = [];
+  let current: unknown = err;
+  while (current instanceof Error && messages.length < 4) {
+    if (current.message !== "" && !messages.includes(current.message)) {
+      messages.push(current.message);
+    }
+    current = current.cause;
+  }
+  return messages.length > 0 ? messages.join(": ") : String(err);
 }
 
 // ─── Cookie helpers ───────────────────────────────────────────────────────────
@@ -149,7 +166,7 @@ export class OctriClient {
   async fetchRaw(url: string): Promise<Response> {
     const target = new URL(url);
     const api = new URL(this.settings.apiUrl);
-    const response = await fetch(url, {
+    const response = await fetchWithProxy(url, {
       // Never forward an Octri session or API key to a CDN/R2 host. Presigned
       // URLs authenticate in their query string; an Authorization header can
       // invalidate them and would disclose the caller's Octri credential.
@@ -207,7 +224,7 @@ export class OctriClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      return await fetch(this.buildUrl(path, query), {
+      return await fetchWithProxy(this.buildUrl(path, query), {
         method,
         signal: controller.signal,
         headers: {
@@ -230,7 +247,7 @@ export class OctriClient {
         );
       }
       throw new ApiError(
-        `Cannot reach ${this.settings.apiUrl}: ${(err as Error).message}`,
+        `Cannot reach ${this.settings.apiUrl}: ${describeFailure(err)}`,
         0,
         "NETWORK",
         undefined,
@@ -283,7 +300,8 @@ export class OctriClient {
     const refreshToken = this.settings.refreshToken;
     if (refreshToken === undefined) return false;
 
-    const response = await fetch(`${this.settings.apiUrl}/auth/refresh`, {
+    const refreshUrl = `${this.settings.apiUrl}/auth/refresh`;
+    const response = await fetchWithProxy(refreshUrl, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -366,7 +384,7 @@ export async function login(
   email: string,
   password: string,
 ): Promise<LoginResult | MfaChallenge> {
-  const response = await fetch(`${apiUrl}/auth/login`, {
+  const response = await fetchWithProxy(`${apiUrl}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ email, password }),
@@ -412,7 +430,7 @@ export async function completeMfa(
   challengeToken: string,
   code: string,
 ): Promise<LoginResult> {
-  const response = await fetch(`${apiUrl}/auth/mfa/challenge`, {
+  const response = await fetchWithProxy(`${apiUrl}/auth/mfa/challenge`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ challengeToken, code }),
