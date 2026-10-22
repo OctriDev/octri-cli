@@ -1466,6 +1466,11 @@ export interface NavTab {
   id?: string;
   title?: string;
   label?: string;
+  slug?: string;
+  kind?: string;
+  hidden?: boolean;
+  /** The tab's folders; rows live in each folder's `items`. */
+  sections?: unknown[];
   items?: unknown[];
 }
 
@@ -2124,6 +2129,146 @@ export async function putNavButtons(
     { method: "PUT", body: { buttons } },
   );
   return body.buttons ?? [];
+}
+
+// ─── Docs: nav tabs, appearance, SEO, socials, playground, custom code ────────
+//
+// The rest of what the studio's octri.json carries. Only the nav tabs are
+// drafted; every other setting here applies on save.
+
+/**
+ * Drafts the sidebar: the whole tab list, in order. Buttons are left out so
+ * they stay as they are (they have no draft). Readers see it after
+ * `POST /nav/publish`.
+ */
+export function putNavTabs(
+  client: OctriClient,
+  projectId: string,
+  tabs: unknown[],
+  sections: unknown[] = [],
+): Promise<{ sections: unknown; tabs: NavTab[]; hasDraft: boolean }> {
+  return client.request(`/projects/${projectId}/nav`, {
+    method: "PUT",
+    body: { sections, tabs },
+  });
+}
+
+/** The docs settings stored on the project itself. */
+export interface DocsSettings {
+  theme: Record<string, unknown>;
+  seo: Record<string, unknown>;
+  socials: Record<string, unknown>;
+  feedbackEnabled: boolean;
+}
+
+/** Per key: a key left out is unchanged. `socials.custom` replaces the whole list. */
+export interface DocsSettingsPatch {
+  theme?: Record<string, unknown>;
+  seo?: Record<string, unknown>;
+  socials?: Record<string, unknown>;
+  feedbackEnabled?: boolean;
+}
+
+function docsSettingsOf(project: Record<string, unknown> | undefined): DocsSettings {
+  const record = (value: unknown): Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  return {
+    theme: record(project?.["theme"]),
+    seo: record(project?.["seo"]),
+    socials: record(project?.["socials"]),
+    feedbackEnabled: project?.["feedbackEnabled"] === true,
+  };
+}
+
+export async function getDocsSettings(
+  client: OctriClient,
+  projectId: string,
+): Promise<DocsSettings> {
+  const body = await client.request<{ project?: Record<string, unknown> }>(
+    `/projects/${projectId}`,
+  );
+  return docsSettingsOf(body.project);
+}
+
+/** Applies at once: the docs site's caches are purged by the same request. */
+export async function updateDocsSettings(
+  client: OctriClient,
+  projectId: string,
+  patch: DocsSettingsPatch,
+): Promise<DocsSettings> {
+  const body = await client.request<{ project?: Record<string, unknown> }>(
+    `/projects/${projectId}`,
+    { method: "PATCH", body: patch },
+  );
+  return docsSettingsOf(body.project);
+}
+
+export interface PlaygroundSettings {
+  enabled: boolean;
+  /** "" inherits the project's API base URL. */
+  baseUrl: string;
+  /** `type: "inherit"` defers to the project's API auth. */
+  defaultAuth: { type: string; headerName: string };
+  allowedOrigins: string[];
+  requestTimeoutMs: number;
+}
+
+/** `effective` is what a request will actually use once inheritance is folded in. */
+export interface Playground {
+  playground: PlaygroundSettings;
+  projectApi?: unknown;
+  effective?: { baseUrl: string; auth: unknown };
+}
+
+export function getPlayground(
+  client: OctriClient,
+  projectId: string,
+): Promise<Playground> {
+  return client.request(`/projects/${projectId}/playground`);
+}
+
+/** `defaultAuth` must be sent whole: type and header name together. */
+export function updatePlayground(
+  client: OctriClient,
+  projectId: string,
+  patch: Partial<PlaygroundSettings>,
+): Promise<Playground> {
+  return client.request(`/projects/${projectId}/playground`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
+export interface CustomCodeSettings {
+  enabled: boolean;
+  css: string;
+  headHtml: string;
+  bodyEndHtml: string;
+}
+
+export async function getCustomCode(
+  client: OctriClient,
+  projectId: string,
+): Promise<CustomCodeSettings> {
+  const body = await client.request<{ customCode: CustomCodeSettings }>(
+    `/projects/${projectId}/custom-code`,
+  );
+  return body.customCode;
+}
+
+/** Growth plan and above; the API refuses it on a plan without custom code. */
+export async function updateCustomCode(
+  client: OctriClient,
+  projectId: string,
+  patch: Partial<CustomCodeSettings>,
+): Promise<CustomCodeSettings> {
+  const body = await client.request<{ customCode: CustomCodeSettings }>(
+    `/projects/${projectId}/custom-code`,
+    { method: "PATCH", body: patch },
+  );
+  return body.customCode;
 }
 
 // ─── Docs: custom components ──────────────────────────────────────────────────

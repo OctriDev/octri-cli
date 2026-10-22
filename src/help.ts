@@ -207,7 +207,10 @@ const GROUPS: Group[] = [
         description: "Publish a page's draft (also regenerate · title)",
       },
       { usage: "docs guides", description: "Hand-written guides (show · publish)" },
-      { usage: "docs nav", description: "Site navigation (show · publish)" },
+      {
+        usage: "docs nav",
+        description: "Site navigation (set <file.json> · publish)",
+      },
       {
         usage: "docs versions",
         description: "Published versions (publish · label · default)",
@@ -227,6 +230,24 @@ const GROUPS: Group[] = [
       {
         usage: "docs buttons",
         description: "Top nav buttons, live on save (add · remove)",
+      },
+      {
+        usage: "docs theme",
+        description: "Appearance, live on save (set key=value …)",
+      },
+      { usage: "docs seo", description: "Search metadata (set key=value …)" },
+      {
+        usage: "docs socials",
+        description: "Social links (set github=<url> · custom=@links.json)",
+      },
+      { usage: "docs feedback", description: "Page feedback widget (on · off)" },
+      {
+        usage: "docs playground",
+        description: "API playground (set enabled=true baseUrl=…)",
+      },
+      {
+        usage: "docs custom-code",
+        description: "CSS and HTML injection (set css=@file enabled=true)",
       },
       {
         usage: "docs components",

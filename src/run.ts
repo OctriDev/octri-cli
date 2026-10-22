@@ -15,6 +15,7 @@ import * as auth from "./commands/auth.js";
 import * as components from "./commands/components.js";
 import * as configCmd from "./commands/config.js";
 import * as docs from "./commands/docs.js";
+import * as docsSettings from "./commands/docs-settings.js";
 import * as endpoints from "./commands/endpoints.js";
 import * as lab from "./commands/lab.js";
 import * as github from "./commands/github.js";
@@ -290,7 +291,35 @@ const SUBROUTES: Record<string, SubGroup> = {
   },
   "docs nav": {
     default: "show",
-    actions: { show: docs.docsNav, publish: docs.docsNavPublish },
+    actions: { show: docs.docsNav, set: docs.docsNavSet, publish: docs.docsNavPublish },
+  },
+  "docs theme": {
+    default: "show",
+    actions: { show: docsSettings.docsTheme, set: docsSettings.docsThemeSet },
+  },
+  "docs seo": {
+    default: "show",
+    actions: { show: docsSettings.docsSeo, set: docsSettings.docsSeoSet },
+  },
+  "docs socials": {
+    default: "show",
+    actions: { show: docsSettings.docsSocials, set: docsSettings.docsSocialsSet },
+  },
+  "docs feedback": {
+    default: "show",
+    actions: {
+      show: docsSettings.docsFeedback,
+      on: docsSettings.docsFeedbackOn,
+      off: docsSettings.docsFeedbackOff,
+    },
+  },
+  "docs playground": {
+    default: "show",
+    actions: { show: docsSettings.docsPlayground, set: docsSettings.docsPlaygroundSet },
+  },
+  "docs custom-code": {
+    default: "show",
+    actions: { show: docsSettings.docsCustomCode, set: docsSettings.docsCustomCodeSet },
   },
   "docs guides": {
     default: "list",

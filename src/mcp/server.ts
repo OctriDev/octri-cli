@@ -8,7 +8,8 @@
  *
  * Safety posture: reads are unrestricted, mutations are grouped, and the
  * genuinely destructive things (publishing SDKs or the project's MCP package to
- * public registries; deleting specs, components or webhooks) are refused unless
+ * public registries, or a drafted docs IA to readers; deleting specs, components
+ * or webhooks) are refused unless
  * the operator started the server with `--allow-publish` / `--allow-delete`.
  * Credentials come from the stored profile; the agent never sees them.
  */
@@ -491,6 +492,84 @@ function tools(options: ServeOptions): Tool[] {
         ["buttons"],
       ),
     },
+    {
+      name: "octri_get_docs_nav",
+      description:
+        "The docs sidebar: tabs, each with its folders (`sections`) and their rows (`items`). The draft when `hasDraft`, otherwise what readers get. Edit this and send it back with octri_set_docs_nav.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_docs_nav",
+      description:
+        "Draft the whole docs sidebar: every tab, in order, as octri_get_docs_nav returns them. A tab is { label, slug, kind, url, hidden, icon, sections }; a folder is { title, items, subsections, ... }; a row is { type: endpoint|guide|page|link, ref, label, hidden, path }. Nav buttons are not touched. Readers see it after the docs nav is published.",
+      inputSchema: schema(
+        {
+          tabs: { type: "array", items: { type: "object" } },
+        },
+        ["tabs"],
+      ),
+    },
+    {
+      name: "octri_get_docs_settings",
+      description:
+        "The docs site's appearance (`theme`), `seo`, `socials` links and whether the page feedback widget is on (`feedbackEnabled`).",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_docs_settings",
+      description:
+        "Change docs settings. No draft: live on the docs site on save. Each of theme, seo and socials is a partial object with the keys octri_get_docs_settings shows (e.g. theme { primaryColor: \"#ff6a00\", colorScheme: \"dark\", codeTheme: \"nord\" }); keys left out are unchanged. A socials platform set to \"\" is removed, and socials.custom replaces the whole list of { label, url, icon }. Returns the saved settings and any theme or seo keys the API ignored as unknown.",
+      inputSchema: schema({
+        theme: { type: "object" },
+        seo: { type: "object" },
+        socials: { type: "object" },
+        feedback_enabled: { type: "boolean" },
+      }),
+    },
+    {
+      name: "octri_get_playground",
+      description:
+        "The docs API playground: on/off, base URL and default auth overrides (\"\" and type \"inherit\" defer to the project's API config), CORS origins, timeout. `effective` is what a request will use.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_playground",
+      description:
+        "Change the docs API playground. No draft: live on save. Only the fields sent change; default_auth may be partial and is merged onto the saved one.",
+      inputSchema: schema({
+        enabled: { type: "boolean" },
+        base_url: { type: "string", description: "\"\" inherits the project's API base URL." },
+        default_auth: {
+          type: "object",
+          properties: {
+            type: {
+              type: "string",
+              enum: ["inherit", "none", "apiKey", "basic", "bearer", "oauth2"],
+            },
+            header_name: { type: "string" },
+          },
+        },
+        allowed_origins: { type: "array", items: { type: "string" } },
+        request_timeout_ms: { type: "number", description: "1000 to 60000." },
+      }),
+    },
+    {
+      name: "octri_get_custom_code",
+      description:
+        "The docs site's custom CSS, <head> HTML and end-of-<body> HTML, and whether they are injected (`enabled`).",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_custom_code",
+      description:
+        "Change the docs site's custom code. Growth plan and above. No draft: live on save once enabled. Only the fields sent change.",
+      inputSchema: schema({
+        enabled: { type: "boolean" },
+        css: { type: "string" },
+        head_html: { type: "string" },
+        body_end_html: { type: "string" },
+      }),
+    },
 
     // ── Docs: custom components ──────────────────────────────────────────────
     {
@@ -742,6 +821,12 @@ function tools(options: ServeOptions): Tool[] {
         "Publish the project's MCP server to npm under the customer's package name, using the linked npm account. Irreversible. Omit `version` for the next patch.",
       inputSchema: schema({ version: { type: "string" } }),
     });
+    list.push({
+      name: "octri_publish_docs_nav",
+      description:
+        "Publish the drafted docs IA: the sidebar, home page and redirects go live for readers together.",
+      inputSchema: schema({}),
+    });
   }
 
   if (options.allowDelete) {
@@ -807,6 +892,16 @@ function stringList(args: Args, key: string): string[] {
 function optionalBoolean(args: Args, key: string): Record<string, boolean> {
   const value = args[key];
   return typeof value === "boolean" ? { [key]: value } : {};
+}
+
+/** An optional object argument, passed through for the API to validate. */
+function objectArg(args: Args, key: string): Args | undefined {
+  const value = args[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`\`${key}\` must be an object.`);
+  }
+  return value as Args;
 }
 
 /** An array of objects; anything else in it is dropped. The API validates the fields. */
@@ -1194,6 +1289,77 @@ async function dispatch(
         ),
       };
 
+    case "octri_get_docs_nav":
+      return api.getNav(client, projectOf(ctx, args));
+
+    case "octri_set_docs_nav":
+      return api.putNavTabs(client, projectOf(ctx, args), objectList(args, "tabs"));
+
+    case "octri_get_docs_settings":
+      return api.getDocsSettings(client, projectOf(ctx, args));
+
+    case "octri_set_docs_settings": {
+      const patch: api.DocsSettingsPatch = {};
+      for (const section of ["theme", "seo", "socials"] as const) {
+        const value = objectArg(args, section);
+        if (value !== undefined) patch[section] = value;
+      }
+      if (typeof args.feedback_enabled === "boolean") patch.feedbackEnabled = args.feedback_enabled;
+      if (Object.keys(patch).length === 0) {
+        throw new Error("Send at least one of theme, seo, socials or feedback_enabled.");
+      }
+      const saved = await api.updateDocsSettings(client, projectOf(ctx, args), patch);
+      // Theme and SEO keys the API does not know are dropped without an error.
+      const ignored = (["theme", "seo"] as const).flatMap((section) =>
+        Object.keys(patch[section] ?? {})
+          .filter((key) => !(key in saved[section]))
+          .map((key) => `${section}.${key}`),
+      );
+      return { ...saved, ...(ignored.length > 0 ? { ignored } : {}) };
+    }
+
+    case "octri_get_playground":
+      return api.getPlayground(client, projectOf(ctx, args));
+
+    case "octri_set_playground": {
+      const projectId = projectOf(ctx, args);
+      const auth = objectArg(args, "default_auth");
+      const patch: Partial<api.PlaygroundSettings> = {
+        ...optionalBoolean(args, "enabled"),
+        ...(typeof args.base_url === "string" ? { baseUrl: args.base_url } : {}),
+        ...(Array.isArray(args.allowed_origins)
+          ? { allowedOrigins: stringList(args, "allowed_origins") }
+          : {}),
+        ...(typeof args.request_timeout_ms === "number"
+          ? { requestTimeoutMs: args.request_timeout_ms }
+          : {}),
+      };
+      if (auth !== undefined) {
+        const current = await api.getPlayground(client, projectId);
+        patch.defaultAuth = {
+          type: typeof auth.type === "string" ? auth.type : current.playground.defaultAuth.type,
+          headerName:
+            typeof auth.header_name === "string"
+              ? auth.header_name
+              : current.playground.defaultAuth.headerName,
+        };
+      }
+      return api.updatePlayground(client, projectId, patch);
+    }
+
+    case "octri_get_custom_code":
+      return { customCode: await api.getCustomCode(client, projectOf(ctx, args)) };
+
+    case "octri_set_custom_code":
+      return {
+        customCode: await api.updateCustomCode(client, projectOf(ctx, args), {
+          ...optionalBoolean(args, "enabled"),
+          ...(typeof args.css === "string" ? { css: args.css } : {}),
+          ...(typeof args.head_html === "string" ? { headHtml: args.head_html } : {}),
+          ...(typeof args.body_end_html === "string" ? { bodyEndHtml: args.body_end_html } : {}),
+        }),
+      };
+
     // ── Docs: custom components ──────────────────────────────────────────────
 
     case "octri_list_components":
@@ -1374,6 +1540,13 @@ async function dispatch(
           : ((await api.githubStatus(client, projectId)).docsSync?.folder ?? "");
       const status = await api.setGithubDocsSync(client, projectId, args.enabled, folder);
       return { docsSync: status.docsSync ?? null };
+    }
+
+    case "octri_publish_docs_nav": {
+      if (!ctx.options.allowPublish) {
+        throw new Error("Publishing is disabled. Restart with --allow-publish.");
+      }
+      return api.publishNav(client, projectOf(ctx, args));
     }
 
     case "octri_publish_mcp_package": {

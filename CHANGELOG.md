@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+The rest of what the API Studio's octri.json holds, from the command line.
+
+- `octri docs nav set <file.json>`: draft the whole sidebar from a file, the
+  same JSON `octri docs nav --json` prints. `docs nav` now counts each tab's
+  folders.
+- `octri docs theme`, `docs seo`, `docs socials`: show them, or `set key=value`.
+  These apply on save. A theme or SEO key the API does not know is reported
+  instead of passing as saved.
+- `octri docs feedback on|off`, `octri docs playground set …` and
+  `octri docs custom-code set …` (`css=@docs.css` reads the file).
+- MCP tools for each: `octri_get_docs_nav`, `octri_set_docs_nav`,
+  `octri_get_docs_settings`, `octri_set_docs_settings`, `octri_get_playground`,
+  `octri_set_playground`, `octri_get_custom_code`, `octri_set_custom_code`, and
+  `octri_publish_docs_nav` behind `--allow-publish`.
+
 ## 1.0.7
 
 Commands, and matching MCP tools, for what Octri shipped since 1.0.6. All of

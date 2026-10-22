@@ -83,6 +83,27 @@ octri docs buttons add "Sign up" https://app.example.com --style primary
 A component file holds the markup alone: one root element, HTML attribute
 names (`class`, not `className`), and props written as `{name}`.
 
+The sidebar itself round-trips through a file, and is drafted like the rest:
+
+```bash
+octri docs nav --json > nav.json
+octri docs nav set nav.json
+octri docs nav publish
+```
+
+Appearance, SEO, social links, page feedback, the API playground and custom
+code have no draft: each `set` is live when it returns. Keys are spelled as in
+the API, `@file` reads a value from a file, and an empty value clears a link:
+
+```bash
+octri docs theme set primaryColor=#ff6a00 colorScheme=dark codeTheme=nord
+octri docs seo set metaDescription="Payments API reference" indexable=true
+octri docs socials set github=https://github.com/acme x=
+octri docs feedback on
+octri docs playground set enabled=true allowedOrigins=https://acme.com
+octri docs custom-code set css=@docs.css enabled=true
+```
+
 In Git Bash on Windows, a lone argument starting with `/` is rewritten into a
 Windows path before the CLI sees it. Set `MSYS_NO_PATHCONV=1`, or use
 PowerShell, for commands that take docs paths.
@@ -241,7 +262,7 @@ Reads are open. The operations you cannot take back are refused unless you
 start the server with the flag for them:
 
 ```bash
-octri mcp serve --allow-publish   # publishing SDKs or your MCP package to registries
+octri mcp serve --allow-publish   # publishing SDKs, your MCP package, or the drafted docs nav
 octri mcp serve --allow-delete    # deleting specs, components or webhooks
 ```
 

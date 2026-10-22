@@ -91,7 +91,7 @@ for (const [what, args] of [
 // ─── Tools added in 1.0.7 ─────────────────────────────────────────────────────
 
 const GATED = {
-  publish: ["octri_publish_mcp_package"],
+  publish: ["octri_publish_mcp_package", "octri_publish_docs_nav"],
   delete: ["octri_delete_component", "octri_delete_webhook"],
 };
 
@@ -111,6 +111,14 @@ test("lists the new tools, and the irreversible ones only behind their flags", a
     "octri_import_conversion",
     "octri_set_quickstart",
     "octri_set_github_docs_sync",
+    "octri_get_docs_nav",
+    "octri_set_docs_nav",
+    "octri_get_docs_settings",
+    "octri_set_docs_settings",
+    "octri_get_playground",
+    "octri_set_playground",
+    "octri_get_custom_code",
+    "octri_set_custom_code",
   ]) {
     assert.ok(plain.includes(name), name);
   }
@@ -174,6 +182,70 @@ test("octri_set_mcp_permission publishes the merged map at the revision it read"
     assert.deepEqual(put, {
       policies: { "post-refunds": { policy: "confirm", destructive: true } },
       revision: 2,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+// ─── octri.json sections ──────────────────────────────────────────────────────
+
+test("octri_set_docs_settings sends the camelCase patch and names theme keys the API dropped", async () => {
+  const client = await connect();
+  const original = globalThis.fetch;
+  let patch: unknown;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    assert.match(url, /\/projects\/proj1$/);
+    patch = JSON.parse(String(init?.body));
+    // The API strips a theme key it does not know, as `primaryColour` here.
+    return Response.json({
+      project: { theme: { primaryColor: "#ff6a00" }, seo: {}, socials: {}, feedbackEnabled: true },
+    });
+  };
+  try {
+    const result = await client.callTool({
+      name: "octri_set_docs_settings",
+      arguments: {
+        theme: { primaryColor: "#ff6a00", primaryColour: "#ff6a00" },
+        feedback_enabled: true,
+      },
+    });
+    assert.equal(result.isError, undefined, text(result));
+    assert.deepEqual(patch, {
+      theme: { primaryColor: "#ff6a00", primaryColour: "#ff6a00" },
+      feedbackEnabled: true,
+    });
+    assert.deepEqual((JSON.parse(text(result)) as { ignored?: string[] }).ignored, [
+      "theme.primaryColour",
+    ]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("octri_set_playground merges a partial default_auth onto the saved one", async () => {
+  const client = await connect();
+  const original = globalThis.fetch;
+  let patch: unknown;
+  globalThis.fetch = async (_input, init) => {
+    if (init?.method === "PATCH") {
+      patch = JSON.parse(String(init.body));
+      return Response.json({ playground: {} });
+    }
+    return Response.json({
+      playground: { defaultAuth: { type: "inherit", headerName: "X-Api-Key" } },
+    });
+  };
+  try {
+    const result = await client.callTool({
+      name: "octri_set_playground",
+      arguments: { default_auth: { type: "apiKey" }, allowed_origins: ["https://acme.com"] },
+    });
+    assert.equal(result.isError, undefined, text(result));
+    assert.deepEqual(patch, {
+      allowedOrigins: ["https://acme.com"],
+      defaultAuth: { type: "apiKey", headerName: "X-Api-Key" },
     });
   } finally {
     globalThis.fetch = original;

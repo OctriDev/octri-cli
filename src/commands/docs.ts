@@ -3,6 +3,8 @@
  * surfaces a project publishes.
  */
 
+import { readFileSync } from "node:fs";
+
 import { flagBool, flagString } from "../args.js";
 import * as api from "../api.js";
 import type { Context } from "../context.js";
@@ -202,13 +204,53 @@ export async function docsNav(ctx: Context): Promise<void> {
       return;
     }
     for (const tab of nav.tabs) {
+      const folders = Array.isArray(tab.sections) ? tab.sections.length : 0;
       const items = Array.isArray(tab.items) ? tab.items.length : 0;
       line(
-        `  ${bold(tab.title ?? tab.label ?? tab.id ?? "—")} ${dim(`${items} item(s)`)}`,
+        `  ${bold(tab.title ?? tab.label ?? tab.id ?? "untitled")} ${dim(tab.kind ?? "")} ${dim(folders > 0 ? `${folders} folder(s)` : `${items} item(s)`)}`,
       );
     }
     if (nav.hasDraft) note("octri docs nav publish");
   });
+}
+
+/**
+ * `octri docs nav set <file.json>`: drafts the whole tab list from a file.
+ * The file is a JSON array of tabs, or what `octri docs nav --json` prints,
+ * so the round trip is: print it, edit it, set it, publish.
+ */
+export async function docsNavSet(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const file = ctx.args.positionals[0];
+  if (file === undefined) {
+    throw new Error("Usage: octri docs nav set <file.json>  (from `octri docs nav --json`)");
+  }
+
+  const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
+  const { tabs, sections } = navFromFile(parsed);
+
+  const result = await withSpinner("Drafting navigation", () =>
+    api.putNavTabs(ctx.client, projectId, tabs, sections),
+  );
+  emit({ projectId, ...result }, () => {
+    success(`Drafted ${result.tabs.length} tab(s).`);
+    note(result.hasDraft ? PUBLISH_HINT : "Same as what is live, so nothing is pending.");
+  });
+}
+
+/** A bare tab array, or an object holding `tabs` (and legacy `sections`). */
+export function navFromFile(parsed: unknown): { tabs: unknown[]; sections: unknown[] } {
+  if (Array.isArray(parsed)) return { tabs: parsed, sections: [] };
+  if (typeof parsed === "object" && parsed !== null) {
+    const record = parsed as Record<string, unknown>;
+    if (Array.isArray(record["tabs"])) {
+      return {
+        tabs: record["tabs"],
+        sections: Array.isArray(record["sections"]) ? record["sections"] : [],
+      };
+    }
+  }
+  throw new Error("Expected a JSON array of tabs, or an object with a `tabs` array.");
 }
 
 export async function docsNavPublish(ctx: Context): Promise<void> {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,7 +7,13 @@ import test from "node:test";
 import { parse } from "./args.js";
 import { OctriClient } from "./client.js";
 import { componentNameFromFile } from "./commands/components.js";
-import { docsButtonAdd, docsRedirectAdd } from "./commands/docs.js";
+import { docsButtonAdd, docsNavSet, docsRedirectAdd, navFromFile } from "./commands/docs.js";
+import {
+  docsCustomCodeSet,
+  docsPlaygroundSet,
+  docsThemeSet,
+  parseAssignments,
+} from "./commands/docs-settings.js";
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
 import { mcpPermissionSet } from "./commands/mcp.js";
@@ -330,4 +336,141 @@ test("github docs pull writes repo paths under --out and never outside it", asyn
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
+});
+
+// ─── octri.json sections: nav tabs and docs settings ──────────────────────────
+
+test("key=value words parse booleans, numbers, lists, JSON, files and dotted keys", () => {
+  const dir = mkdtempSync(join(tmpdir(), "octri-assign-"));
+  try {
+    writeFileSync(join(dir, "docs.css"), ".a { color: red }\n");
+    assert.deepEqual(
+      parseAssignments(
+        [
+          "showToc=false",
+          "metaTitle=Acme = Payments",
+          "requestTimeoutMs=30000",
+          "allowedOrigins=https://a.dev, https://b.dev",
+          "custom=[]",
+          "defaultAuth.type=bearer",
+          `css=@${join(dir, "docs.css")}`,
+          "x=",
+        ],
+        { numbers: ["requestTimeoutMs"], lists: ["allowedOrigins"], json: ["custom"] },
+      ),
+      {
+        showToc: false,
+        metaTitle: "Acme = Payments",
+        requestTimeoutMs: 30000,
+        allowedOrigins: ["https://a.dev", "https://b.dev"],
+        custom: [],
+        defaultAuth: { type: "bearer" },
+        css: ".a { color: red }\n",
+        x: "",
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.throws(() => parseAssignments(["primaryColor"]), /key=value/);
+  assert.throws(() => parseAssignments(["t=soon"], { numbers: ["t"] }), /number/);
+});
+
+test("docs theme set patches only the theme with the keys as typed", async () => {
+  await withApi(
+    {
+      "PATCH /projects/p1": (call: Call) => ({
+        project: { theme: (call.body as { theme: object }).theme, seo: {}, socials: {} },
+      }),
+    },
+    async (calls) => {
+      await docsThemeSet(
+        context(["docs", "theme", "set", "primaryColor=#ff6a00", "showLogo=true"]),
+      );
+      assert.deepEqual(writes(calls, "PATCH")[0]?.body, {
+        theme: { primaryColor: "#ff6a00", showLogo: true },
+      });
+    },
+  );
+});
+
+test("docs playground set sends defaultAuth whole, merged onto the saved half", async () => {
+  const playground = {
+    enabled: false,
+    baseUrl: "",
+    defaultAuth: { type: "inherit", headerName: "Authorization" },
+    allowedOrigins: [],
+    requestTimeoutMs: 15000,
+  };
+  await withApi(
+    {
+      "GET /projects/p1/playground": { playground },
+      "PATCH /projects/p1/playground": (call: Call) => ({
+        playground: { ...playground, ...(call.body as object) },
+      }),
+    },
+    async (calls) => {
+      await docsPlaygroundSet(
+        context(["docs", "playground", "set", "defaultAuth.type=bearer", "requestTimeoutMs=30000"]),
+      );
+      assert.deepEqual(writes(calls, "PATCH")[0]?.body, {
+        defaultAuth: { type: "bearer", headerName: "Authorization" },
+        requestTimeoutMs: 30000,
+      });
+    },
+  );
+});
+
+test("docs custom-code set reads @file values", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "octri-code-"));
+  try {
+    const file = join(dir, "head.html");
+    writeFileSync(file, '<meta name="x" content="y">');
+    await withApi(
+      {
+        "PATCH /projects/p1/custom-code": (call: Call) => ({
+          customCode: { enabled: true, css: "", headHtml: "", bodyEndHtml: "", ...(call.body as object) },
+        }),
+      },
+      async (calls) => {
+        await docsCustomCodeSet(
+          context(["docs", "custom-code", "set", `headHtml=@${file}`, "enabled=true"]),
+        );
+        assert.deepEqual(writes(calls, "PATCH")[0]?.body, {
+          headHtml: '<meta name="x" content="y">',
+          enabled: true,
+        });
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("docs nav set drafts the tabs from `docs nav --json` output and leaves buttons out", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "octri-nav-"));
+  try {
+    const file = join(dir, "nav.json");
+    const tabs = [{ label: "Guides", slug: "guides", kind: "content", sections: [] }];
+    writeFileSync(
+      file,
+      JSON.stringify({
+        sections: null,
+        tabs,
+        buttons: [{ label: "Sign up", url: "/signup", style: "plain" }],
+        hasDraft: false,
+      }),
+    );
+    await withApi(
+      { "PUT /projects/p1/nav": (call: Call) => ({ ...(call.body as object), hasDraft: true }) },
+      async (calls) => {
+        await docsNavSet(context(["docs", "nav", "set", file]));
+        assert.deepEqual(writes(calls, "PUT")[0]?.body, { sections: [], tabs });
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(navFromFile([{ label: "A" }]), { tabs: [{ label: "A" }], sections: [] });
+  assert.throws(() => navFromFile({ nav: [] }), /tabs/);
 });
