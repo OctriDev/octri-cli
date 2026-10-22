@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.0.7
+
+Commands, and matching MCP tools, for what Octri shipped since 1.0.6. All of
+them run on a signed-in session (`octri auth login`); an API key is refused.
+
+- `octri mcp permissions`, `usage`, `calls` and `package`: the project's own
+  MCP server. Set a tool to `auto`, `confirm` or `off` and mark it destructive;
+  the change reaches agents at once and never overwrites a teammate's publish.
+  Read calls per tool and the live call feed. Download the npm package that
+  ships the server under your name, or publish it to your linked npm account.
+- `octri docs redirects`, `docs home` and `docs buttons`. Redirects and the home
+  page are drafted and go live with `octri docs nav publish`; nav buttons apply
+  on save, as in the API Studio.
+- `octri docs components`: list, show, push and remove custom components. `push`
+  creates or updates by name, so a folder of components can be pushed from CI.
+- `octri docs endpoints`: draft new endpoints or mark existing ones for removal,
+  then `publish` writes them into the spec as a new version.
+- `octri webhooks`: create, update, test, inspect deliveries of, and delete
+  project webhooks. The signing secret prints once, on create.
+- `octri specs convert`: import a report exported from the spec converter, and
+  download the report behind a converted spec.
+- `octri github docs`: list the connected repo's MDX and Markdown, pull them to
+  disk, and turn docs sync on push on or off.
+- `octri sdk quickstart`: mark the endpoint every SDK README leads with.
+- `octri sdk audit source`: the spec text the auditor scores, to a file or
+  stdout.
+- `octri sdk artifacts` prints each artifact's permanent share link.
+- The MCP server gains 36 tools for the above, 69 in all.
+- `--version 2.0.0` reaches the command that takes it (`sdk build`,
+  `sdk settings set`, `lab run`, `mcp package publish`). It used to print the
+  CLI's own version and exit, so only `--version=2.0.0` worked. A bare
+  `octri --version` still prints the CLI's version. Publishing the MCP package needs
+  `--allow-publish`; deleting a component or webhook needs `--allow-delete`.
+
 ## 1.0.6
 
 - The CLI and `octri mcp serve` honour `HTTPS_PROXY`, `HTTP_PROXY` and

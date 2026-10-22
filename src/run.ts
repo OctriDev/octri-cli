@@ -12,17 +12,21 @@
 import { flagBool, flagString, parse } from "./args.js";
 import { ApiError, NotAuthenticatedError } from "./client.js";
 import * as auth from "./commands/auth.js";
+import * as components from "./commands/components.js";
 import * as configCmd from "./commands/config.js";
 import * as docs from "./commands/docs.js";
+import * as endpoints from "./commands/endpoints.js";
 import * as lab from "./commands/lab.js";
 import * as github from "./commands/github.js";
 import * as jobs from "./commands/jobs.js";
 import * as keys from "./commands/keys.js";
+import * as mcp from "./commands/mcp.js";
 import * as monitoring from "./commands/monitoring.js";
 import * as orgs from "./commands/orgs.js";
 import * as projects from "./commands/projects.js";
 import * as sdk from "./commands/sdk.js";
 import * as specs from "./commands/specs.js";
+import * as webhooks from "./commands/webhooks.js";
 import { createContext, type Context } from "./context.js";
 import { printHelp } from "./help.js";
 import { cursor, dim } from "./ui/ansi.js";
@@ -146,6 +150,18 @@ const ROUTES: Record<string, Handler> = {
   "docs show": docs.docsShow,
   "docs changelog": docs.docsChangelog,
   "mcp tools": docs.mcpTools,
+  "mcp usage": mcp.mcpUsage,
+  "mcp calls": mcp.mcpCalls,
+
+  // webhooks
+  webhooks: webhooks.webhooksList,
+  "webhooks list": webhooks.webhooksList,
+  "webhooks events": webhooks.webhooksEvents,
+  "webhooks create": webhooks.webhooksCreate,
+  "webhooks update": webhooks.webhooksUpdate,
+  "webhooks delete": webhooks.webhooksDelete,
+  "webhooks test": webhooks.webhooksTest,
+  "webhooks deliveries": webhooks.webhooksDeliveries,
 };
 
 /**
@@ -175,6 +191,43 @@ const SUBROUTES: Record<string, SubGroup> = {
       report: sdk.sdkAudit,
       apply: sdk.sdkAuditApply,
       ignore: sdk.sdkAuditIgnore,
+      source: sdk.sdkAuditSource,
+    },
+  },
+  "sdk quickstart": {
+    default: "list",
+    actions: {
+      list: sdk.sdkQuickstart,
+      set: sdk.sdkQuickstartSet,
+      unset: sdk.sdkQuickstartUnset,
+    },
+  },
+  "specs convert": {
+    default: "status",
+    actions: {
+      status: specs.specsConvertStatus,
+      import: specs.specsConvertImport,
+      report: specs.specsConvertReport,
+    },
+  },
+  "github docs": {
+    default: "status",
+    actions: {
+      status: github.githubDocs,
+      pull: github.githubDocsPull,
+      sync: github.githubDocsSync,
+    },
+  },
+  "mcp permissions": {
+    default: "list",
+    actions: { list: mcp.mcpPermissions, set: mcp.mcpPermissionSet },
+  },
+  "mcp package": {
+    default: "show",
+    actions: {
+      show: mcp.mcpPackage,
+      download: mcp.mcpPackageDownload,
+      publish: mcp.mcpPackagePublish,
     },
   },
   "monitoring sourcemaps": {
@@ -264,6 +317,51 @@ const SUBROUTES: Record<string, SubGroup> = {
       unpublish: docs.docsVersionUnpublish,
       label: docs.docsVersionLabel,
       default: docs.docsVersionDefault,
+    },
+  },
+  "docs redirects": {
+    default: "list",
+    actions: {
+      list: docs.docsRedirects,
+      add: docs.docsRedirectAdd,
+      remove: docs.docsRedirectRemove,
+    },
+  },
+  "docs home": {
+    default: "show",
+    actions: {
+      show: docs.docsHome,
+      set: docs.docsHomeSet,
+      clear: docs.docsHomeClear,
+    },
+  },
+  "docs buttons": {
+    default: "list",
+    actions: {
+      list: docs.docsButtons,
+      add: docs.docsButtonAdd,
+      remove: docs.docsButtonRemove,
+    },
+  },
+  "docs components": {
+    default: "list",
+    actions: {
+      list: components.componentsList,
+      show: components.componentsShow,
+      push: components.componentsPush,
+      remove: components.componentsRemove,
+      "built-in": components.componentsBuiltIn,
+    },
+  },
+  "docs endpoints": {
+    default: "list",
+    actions: {
+      list: endpoints.endpointsList,
+      add: endpoints.endpointsAdd,
+      remove: endpoints.endpointsRemove,
+      edit: endpoints.endpointsEdit,
+      discard: endpoints.endpointsDiscard,
+      publish: endpoints.endpointsPublish,
     },
   },
 };

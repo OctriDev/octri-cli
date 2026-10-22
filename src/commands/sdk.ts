@@ -382,6 +382,87 @@ export async function sdkAuditIgnore(ctx: Context): Promise<void> {
   );
 }
 
+/**
+ * `octri sdk audit source [--out openapi.yaml]`: the spec text the auditor
+ * scores, with the findings the project ignores. Without `--out` the spec goes
+ * to stdout, so it pipes into a local linter.
+ */
+export async function sdkAuditSource(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const source = await withSpinner("Loading audit source", () =>
+    api.getAuditSource(ctx.client, projectId),
+  );
+  const out = flagString(ctx.args, "out");
+
+  if (out === undefined) {
+    emit(source, () => line(source.content));
+    return;
+  }
+  writeFileSync(out, source.content);
+  emit({ specId: source.specId, path: out, ignored: source.ignored }, () => {
+    success(`Saved spec ${dim(source.specId)} to ${bold(out)}`);
+    const ignored = Array.isArray(source.ignored) ? source.ignored : [];
+    if (ignored.length > 0) note(`Ignored findings: ${ignored.join(", ")}`);
+  });
+}
+
+// ─── README quickstart ────────────────────────────────────────────────────────
+//
+// An endpoint marked as the quickstart becomes the headline example in every
+// SDK's README whenever its call can be rendered. It is per-endpoint SDK
+// config, so marking one publishes the settings like `sdk settings set` does.
+
+export async function sdkQuickstart(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const bundle = await withSpinner("Loading SDK settings", () =>
+    api.getSdkSettings(ctx.client, projectId),
+  );
+  const slugs = api.quickstartSlugs(bundle.sdkEndpoints);
+
+  emit({ projectId, quickstart: slugs }, () => {
+    heading("README quickstart");
+    if (slugs.length === 0) {
+      note("None marked: the generator picks one. Run `octri sdk quickstart set <endpoint>`.");
+      return;
+    }
+    for (const slug of slugs) line(`  ${bold(slug)}`);
+  });
+}
+
+/**
+ * `octri sdk quickstart set|unset <slug|operationId|METHOD /path>`. The
+ * endpoint may be typed as two words (`GET /users`) or one quoted string.
+ */
+async function setQuickstart(ctx: Context, on: boolean): Promise<void> {
+  const projectId = ctx.projectId();
+  const words = ctx.args.positionals;
+  if (words.length === 0) {
+    throw new Error(
+      `Usage: octri sdk quickstart ${on ? "set" : "unset"} <slug|operationId|METHOD /path>`,
+    );
+  }
+  const changelog = flagString(ctx.args, "changelog");
+  const { slug, revision } = await withSpinner("Publishing SDK settings", () =>
+    api.setQuickstart(ctx.client, projectId, words.join(" "), on, changelog),
+  );
+
+  emit({ projectId, slug, quickstart: on, revision }, () =>
+    success(
+      on
+        ? `${bold(slug)} is the README quickstart.`
+        : `${bold(slug)} is no longer the README quickstart.`,
+    ),
+  );
+}
+
+export function sdkQuickstartSet(ctx: Context): Promise<void> {
+  return setQuickstart(ctx, true);
+}
+
+export function sdkQuickstartUnset(ctx: Context): Promise<void> {
+  return setQuickstart(ctx, false);
+}
+
 // ─── Builds ───────────────────────────────────────────────────────────────────
 
 /**
@@ -524,6 +605,14 @@ export async function sdkArtifacts(ctx: Context): Promise<void> {
       ],
       { emptyMessage: "No artifacts on this build." },
     );
+
+    // Full width below the table: a share link is only useful uncut.
+    const shared = artifacts.filter((a) => a.shareUrl !== undefined);
+    if (shared.length > 0) {
+      heading("Share links");
+      for (const a of shared) line(`  ${bold(a.language.padEnd(12))} ${a.shareUrl}`);
+      note("Public links: they work signed out and count downloads.");
+    }
   });
 }
 

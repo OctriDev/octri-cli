@@ -7,7 +7,12 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
+import { PROXY_VARIABLES } from "../proxy.js";
 import { createServer } from "./server.js";
+
+// Some tests below stub the built-in fetch. A proxy variable in the shell
+// running them would send requests through undici instead and past the stub.
+for (const name of PROXY_VARIABLES) delete process.env[name];
 
 // ─── Local artifact cache ─────────────────────────────────────────────────────
 //
@@ -25,7 +30,9 @@ const generated = join(configDir, "cache", "lab", "proj1", "build1", "typescript
 mkdirSync(generated, { recursive: true });
 writeFileSync(join(generated, "index.ts"), "export const ok = true;\n");
 
-async function connect(): Promise<Client> {
+async function connect(
+  options = { allowPublish: false, allowDelete: false },
+): Promise<Client> {
   const server = createServer(
     {
       profile: "default",
@@ -36,7 +43,7 @@ async function connect(): Promise<Client> {
       defaultProject: "proj1",
       defaultLanguages: [],
     },
-    { allowPublish: false, allowDelete: false },
+    options,
   );
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0.0.0" });
@@ -80,3 +87,95 @@ for (const [what, args] of [
     }
   });
 }
+
+// ─── Tools added in 1.0.7 ─────────────────────────────────────────────────────
+
+const GATED = {
+  publish: ["octri_publish_mcp_package"],
+  delete: ["octri_delete_component", "octri_delete_webhook"],
+};
+
+test("lists the new tools, and the irreversible ones only behind their flags", async () => {
+  const names = async (options?: { allowPublish: boolean; allowDelete: boolean }) =>
+    (await (await connect(options)).listTools()).tools.map((t) => t.name);
+
+  const plain = await names();
+  for (const name of [
+    "octri_get_mcp_permissions",
+    "octri_set_mcp_permission",
+    "octri_set_redirects",
+    "octri_set_nav_buttons",
+    "octri_save_component",
+    "octri_publish_draft_endpoints",
+    "octri_create_webhook",
+    "octri_import_conversion",
+    "octri_set_quickstart",
+    "octri_set_github_docs_sync",
+  ]) {
+    assert.ok(plain.includes(name), name);
+  }
+  for (const name of [...GATED.publish, ...GATED.delete]) {
+    assert.ok(!plain.includes(name), `${name} listed without its flag`);
+  }
+
+  const all = await names({ allowPublish: true, allowDelete: true });
+  for (const name of [...GATED.publish, ...GATED.delete]) assert.ok(all.includes(name), name);
+  assert.equal(new Set(all).size, all.length, "tool names are unique");
+});
+
+test("refuses a gated tool called by name without its flag, before any request", async () => {
+  const client = await connect();
+  const original = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const publish = await client.callTool({ name: "octri_publish_mcp_package", arguments: {} });
+    assert.equal(publish.isError, true);
+    assert.match(text(publish), /--allow-publish/);
+
+    const remove = await client.callTool({
+      name: "octri_delete_webhook",
+      arguments: { webhook_id: "w1" },
+    });
+    assert.equal(remove.isError, true);
+    assert.match(text(remove), /--allow-delete/);
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("octri_set_mcp_permission publishes the merged map at the revision it read", async () => {
+  const client = await connect();
+  const original = globalThis.fetch;
+  let put: unknown;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (init?.method === "PUT") {
+      put = JSON.parse(String(init.body));
+      return Response.json({ policies: {}, policiesRevision: 3 });
+    }
+    assert.match(url, /\/projects\/proj1\/mcp\/tools$/);
+    return Response.json({
+      tools: [{ slug: "post-refunds", name: "createRefund", http: { method: "POST", path: "/refunds" } }],
+      policies: {},
+      policiesRevision: 2,
+    });
+  };
+  try {
+    const result = await client.callTool({
+      name: "octri_set_mcp_permission",
+      arguments: { tool: "createRefund", policy: "confirm", destructive: true },
+    });
+    assert.equal(result.isError, undefined, text(result));
+    assert.deepEqual(put, {
+      policies: { "post-refunds": { policy: "confirm", destructive: true } },
+      revision: 2,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});

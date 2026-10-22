@@ -6,19 +6,25 @@
  * is per-language and belongs with the generator.
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve as resolvePath, sep } from "node:path";
+
 import * as api from "../api.js";
 import { flagBool, flagString } from "../args.js";
-import { bold, dim, green, yellow } from "../ui/ansi.js";
+import { bold, dim, green, red, yellow } from "../ui/ansi.js";
 import {
+  bytes,
   emit,
   heading,
   keyValues,
+  line,
   note,
   relativeTime,
   success,
   warn,
 } from "../ui/output.js";
 import { withSpinner } from "../ui/spinner.js";
+import { table } from "../ui/table.js";
 
 import type { Context } from "../context.js";
 
@@ -122,6 +128,123 @@ export async function githubAutoSync(ctx: Context): Promise<void> {
   emit(status, () =>
     success(`Auto-sync is ${status.autoSync ? green("on") : yellow("off")}.`),
   );
+}
+
+// ─── Docs pull and sync ───────────────────────────────────────────────────────
+//
+// The connected repo's MDX and Markdown files. The API Studio's Files panel
+// turns pulled files into page drafts; from a terminal they are written to
+// disk. Sync on push rewrites page drafts only: Publish still gates readers.
+
+/** `octri github docs`: the repo's docs files and the sync setting. */
+export async function githubDocs(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const [status, listing] = await withSpinner("Loading repo docs", () =>
+    Promise.all([
+      api.githubStatus(ctx.client, projectId),
+      api.listGithubDocsFiles(ctx.client, projectId),
+    ]),
+  );
+  const sync = status.docsSync;
+
+  emit({ projectId, docsSync: sync ?? null, ...listing }, () => {
+    heading(`Docs in ${bold(`${listing.owner}/${listing.repo}`)} ${dim(listing.branch)}`);
+    keyValues([
+      ["sync on push", sync?.enabled === true ? green("on") : yellow("off")],
+      ["folder", sync === undefined ? dim("not set") : sync.folder || dim("whole repo")],
+      ["linked pages", String(sync?.links.length ?? 0)],
+      ["last synced", relativeTime(sync?.lastSyncedAt)],
+      ...(sync?.lastError === undefined
+        ? []
+        : ([["last error", red(sync.lastError)]] as const)),
+    ]);
+    line();
+    table(
+      listing.files,
+      [
+        { header: "file", value: (f) => f.path, flex: 1, minWidth: 20 },
+        { header: "size", value: (f) => bytes(f.size), align: "right", flex: 6 },
+      ],
+      { emptyMessage: "No .mdx or .md files in the repo." },
+    );
+    if (listing.truncated) warn("The repo has more files than one listing returns.");
+  });
+}
+
+/** The API reads at most this many files per request. */
+const READ_BATCH = 50;
+
+/**
+ * `octri github docs pull [path…] [--out docs]`: writes the repo's docs files
+ * under `--out`, keeping their repo paths. No paths pulls every listed file.
+ */
+export async function githubDocsPull(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const out = resolvePath(flagString(ctx.args, "out") ?? ".");
+  let paths = [...ctx.args.positionals];
+  if (paths.length === 0) {
+    const listing = await withSpinner("Listing repo docs", () =>
+      api.listGithubDocsFiles(ctx.client, projectId),
+    );
+    paths = listing.files.map((f) => f.path);
+  }
+  if (paths.length === 0) {
+    warn("The repo has no .mdx or .md files to pull.");
+    return;
+  }
+
+  const written: string[] = [];
+  const skipped: { path: string; reason: string }[] = [];
+  for (let i = 0; i < paths.length; i += READ_BATCH) {
+    const batch = paths.slice(i, i + READ_BATCH);
+    const result = await withSpinner(
+      `Reading ${Math.min(i + READ_BATCH, paths.length)} of ${paths.length}`,
+      () => api.readGithubDocsFiles(ctx.client, projectId, batch),
+    );
+    for (const file of result.files) {
+      const target = resolvePath(out, file.path);
+      // Repo paths come from the API, but a path still never leaves `--out`.
+      if (target !== out && !target.startsWith(`${out}${sep}`)) {
+        skipped.push({ path: file.path, reason: "outside_out" });
+        continue;
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.content);
+      written.push(file.path);
+    }
+    skipped.push(...result.skipped);
+  }
+
+  emit({ projectId, out, written, skipped }, () => {
+    success(`Pulled ${bold(String(written.length))} file(s) into ${bold(out)}`);
+    for (const s of skipped) warn(`${s.path}: ${s.reason.replace(/_/g, " ")}`);
+  });
+}
+
+/** `octri github docs sync <on|off> [--folder docs/]` */
+export async function githubDocsSync(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const value = ctx.args.positionals[0];
+  if (value !== "on" && value !== "off") {
+    throw new Error("Usage: octri github docs sync <on|off> [--folder docs/]");
+  }
+
+  const folderFlag = flagString(ctx.args, "folder");
+  const folder =
+    folderFlag ?? (await api.githubStatus(ctx.client, projectId)).docsSync?.folder ?? "";
+
+  const status = await withSpinner(`Turning docs sync ${value}`, () =>
+    api.setGithubDocsSync(ctx.client, projectId, value === "on", folder),
+  );
+  const sync = status.docsSync;
+  emit(status, () => {
+    success(
+      `Docs sync is ${sync?.enabled === true ? green("on") : yellow("off")}${sync?.enabled === true ? ` for ${bold(sync.folder || "the whole repo")}` : ""}.`,
+    );
+    if (sync?.enabled === true) {
+      note("Pushes rewrite page drafts. Readers see them after you publish.");
+    }
+  });
 }
 
 /** `octri github app`: the dashboard-owned App, used for private repos. */

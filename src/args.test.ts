@@ -54,6 +54,17 @@ test("flagNumber rejects non-numeric input rather than yielding NaN", () => {
   assert.equal(flagNumber(parse(["a", "--page", "x"]), "page"), undefined);
 });
 
+test("--version takes a value on a command, and stays bare on its own", () => {
+  // `sdk settings set k v --version 2.0.0` used to print the CLI's version and
+  // exit, because `version` was a boolean flag and never kept its value.
+  const set = parse(["sdk", "settings", "set", "k", "v", "--version", "2.0.0"]);
+  assert.equal(flagString(set, "version"), "2.0.0");
+  assert.equal(set.flags["version"] === true, false);
+
+  assert.equal(parse(["--version"]).flags["version"], true);
+  assert.equal(parse(["-v"]).flags["version"], true);
+});
+
 test("a value that looks like a flag is not consumed as one", () => {
   const args = parse(["a", "--out", "--json"]);
   assert.equal(args.flags["out"], true);

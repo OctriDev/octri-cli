@@ -462,3 +462,220 @@ export async function docsDomainRemove(ctx: Context): Promise<void> {
   );
   emit({ removed: true }, () => success("Custom domain removed."));
 }
+
+// ─── Redirects ────────────────────────────────────────────────────────────────
+//
+// Redirects and the home page are part of the docs IA, so they are drafted:
+// every write here lands in the draft and reaches readers on
+// `octri docs nav publish`, exactly as in the API Studio.
+
+const PUBLISH_HINT = "octri docs nav publish: send the draft live";
+
+export async function docsRedirects(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const result = await withSpinner("Loading redirects", () =>
+    api.getRedirects(ctx.client, projectId),
+  );
+
+  emit({ projectId, ...result }, () => {
+    heading(
+      `Redirects ${dim(`(${result.redirects.length})`)} ${result.pending ? yellow("unpublished draft") : ""}`,
+    );
+    table(
+      result.redirects,
+      [
+        { header: "from", value: (r) => bold(r.from), flex: 1, minWidth: 16 },
+        { header: "to", value: (r) => r.to, flex: 1, minWidth: 16 },
+        {
+          header: "",
+          value: (r) => (r.force === true ? dim("page rename") : ""),
+          flex: 5,
+        },
+      ],
+      { emptyMessage: "No redirects." },
+    );
+    if (result.pending) note(PUBLISH_HINT);
+  });
+}
+
+/**
+ * `octri docs redirects add <from> <to>`. A rule for the same old path is
+ * replaced in place rather than duplicated, which the API would refuse.
+ */
+export async function docsRedirectAdd(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const [from, to] = ctx.args.positionals;
+  if (from === undefined || to === undefined) {
+    throw new Error("Usage: octri docs redirects add <from> <to>  (e.g. /old/* /new/*)");
+  }
+
+  const current = await api.getRedirects(ctx.client, projectId);
+  const rules = current.redirects.filter((r) => r.from !== from);
+  rules.push({ from, to });
+
+  const result = await withSpinner("Drafting redirect", () =>
+    api.putRedirects(ctx.client, projectId, rules),
+  );
+  emit({ projectId, ...result }, () => {
+    success(`Drafted ${bold(from)} → ${to}`);
+    note(PUBLISH_HINT);
+  });
+}
+
+export async function docsRedirectRemove(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const from = ctx.args.positionals[0];
+  if (from === undefined) {
+    throw new Error("Usage: octri docs redirects remove <from>");
+  }
+
+  const current = await api.getRedirects(ctx.client, projectId);
+  const rules = current.redirects.filter((r) => r.from !== from);
+  if (rules.length === current.redirects.length) {
+    throw new Error(`No redirect from ${from}. Run \`octri docs redirects\`.`);
+  }
+
+  const result = await withSpinner("Drafting removal", () =>
+    api.putRedirects(ctx.client, projectId, rules),
+  );
+  emit({ projectId, ...result }, () => {
+    success(`Drafted removal of ${bold(from)}.`);
+    note(PUBLISH_HINT);
+  });
+}
+
+// ─── Home page ────────────────────────────────────────────────────────────────
+
+export async function docsHome(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const result = await withSpinner("Loading home page", () =>
+    api.getDocsHome(ctx.client, projectId),
+  );
+
+  emit({ projectId, ...result }, () => {
+    heading(`Docs home page ${result.pending ? yellow("unpublished draft") : ""}`);
+    if (result.home === null) {
+      keyValues([["page", dim("none")]]);
+      note("octri docs home set <guideId>: serve a guide at /");
+    } else {
+      keyValues([
+        ["page", bold(result.home.guideId)],
+        ["sidebar", result.home.hideSidebar ? dim("hidden") : "shown"],
+      ]);
+    }
+    if (result.pending) note(PUBLISH_HINT);
+  });
+}
+
+/** `octri docs home set <guideId> [--hide-sidebar|--no-hide-sidebar]` */
+export async function docsHomeSet(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const guideId = ctx.args.positionals[0];
+  if (guideId === undefined) {
+    throw new Error("Usage: octri docs home set <guideId> [--hide-sidebar]");
+  }
+  const hide = ctx.args.flags["hide-sidebar"];
+
+  const result = await withSpinner("Drafting home page", () =>
+    api.putDocsHome(
+      ctx.client,
+      projectId,
+      guideId,
+      typeof hide === "boolean" ? hide : undefined,
+    ),
+  );
+  emit({ projectId, ...result }, () => {
+    success(`Drafted ${bold(guideId)} as the home page.`);
+    note(PUBLISH_HINT);
+  });
+}
+
+export async function docsHomeClear(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const result = await withSpinner("Drafting no home page", () =>
+    api.putDocsHome(ctx.client, projectId, null),
+  );
+  emit({ projectId, ...result }, () => {
+    success("Drafted: no home page.");
+    note(PUBLISH_HINT);
+  });
+}
+
+// ─── Nav buttons ──────────────────────────────────────────────────────────────
+//
+// The top nav's call-to-action buttons have no draft: they apply on save.
+
+const BUTTON_STYLES: readonly api.NavButtonStyle[] = ["plain", "outline", "primary"];
+
+export async function docsButtons(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const nav = await withSpinner("Loading nav buttons", () =>
+    api.getNav(ctx.client, projectId),
+  );
+  const buttons = nav.buttons ?? [];
+
+  emit({ projectId, buttons }, () => {
+    heading(`Nav buttons ${dim(`(${buttons.length} of 3)`)}`);
+    table(
+      buttons,
+      [
+        { header: "label", value: (b) => bold(b.label), flex: 3, minWidth: 10 },
+        { header: "style", value: (b) => b.style, flex: 5 },
+        { header: "url", value: (b) => dim(b.url), flex: 1, minWidth: 16 },
+      ],
+      { emptyMessage: "No nav buttons." },
+    );
+  });
+}
+
+/**
+ * `octri docs buttons add <label> <url> [--style plain|outline|primary]`. A
+ * button with the same label is replaced in place.
+ */
+export async function docsButtonAdd(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const [label, url] = ctx.args.positionals;
+  if (label === undefined || url === undefined) {
+    throw new Error(
+      "Usage: octri docs buttons add <label> <url> [--style plain|outline|primary]",
+    );
+  }
+  const style = (flagString(ctx.args, "style") ?? "plain") as api.NavButtonStyle;
+  if (!BUTTON_STYLES.includes(style)) {
+    throw new Error(`Style must be one of ${BUTTON_STYLES.join(", ")}.`);
+  }
+
+  const nav = await api.getNav(ctx.client, projectId);
+  const buttons = [...(nav.buttons ?? [])];
+  const index = buttons.findIndex((b) => b.label === label);
+  if (index === -1) buttons.push({ label, url, style });
+  else buttons[index] = { label, url, style };
+
+  const saved = await withSpinner("Saving nav buttons", () =>
+    api.putNavButtons(ctx.client, projectId, buttons),
+  );
+  emit({ projectId, buttons: saved }, () =>
+    success(`${bold(label)} is in the nav. Buttons go live on save.`),
+  );
+}
+
+export async function docsButtonRemove(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const label = ctx.args.positionals[0];
+  if (label === undefined) {
+    throw new Error("Usage: octri docs buttons remove <label>");
+  }
+
+  const nav = await api.getNav(ctx.client, projectId);
+  const buttons = (nav.buttons ?? []).filter((b) => b.label !== label);
+  if (buttons.length === (nav.buttons ?? []).length) {
+    throw new Error(`No nav button labelled "${label}".`);
+  }
+
+  const saved = await withSpinner("Saving nav buttons", () =>
+    api.putNavButtons(ctx.client, projectId, buttons),
+  );
+  emit({ projectId, buttons: saved }, () =>
+    success(`Removed ${bold(label)} from the nav.`),
+  );
+}

@@ -3,7 +3,7 @@
  * inspect what the parser made of it.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 
 import * as api from "../api.js";
@@ -159,6 +159,89 @@ export async function specsDelete(ctx: Context): Promise<void> {
     api.deleteSpec(ctx.client, projectId, specId),
   );
   emit({ deleted: specId }, () => success("Spec deleted."));
+}
+
+// ─── Spec converter ───────────────────────────────────────────────────────────
+//
+// The converter itself runs in the browser (the dashboard's Spec converter page
+// and the public tool); what it exports is a conversion report. Importing the
+// report makes the API re-run the conversion from it and ingest the result as
+// the current spec, keeping the report as evidence.
+
+/** `octri specs convert`: the current spec and whether it came from a conversion. */
+export async function specsConvertStatus(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const source = await withSpinner("Loading converter source", () =>
+    api.getConverterSource(ctx.client, projectId),
+  );
+
+  // The spec text can run to megabytes; it belongs in `--json`, not a table.
+  const { content, ...summary } = source;
+  emit(source, () => {
+    heading("Spec converter");
+    keyValues([
+      ["current spec", source.specId ?? dim("none")],
+      ["spec size", content === null ? dim("none") : bytes(Buffer.byteLength(content))],
+      ["converted", summary.conversionArtifactId === null ? dim("no") : green("yes")],
+      ["targets", summary.importTargets.join(", ")],
+      ["report limit", bytes(summary.maxReportBytes)],
+    ]);
+    note("octri specs convert import <report.json>: import a conversion report");
+  });
+}
+
+/**
+ * `octri specs convert import <report.json> [--expect-spec <specId>] [--no-wait]`
+ *
+ * The import only lands while the spec it was made against is still current.
+ * `--expect-spec` names that spec; without it the spec current right now is
+ * assumed, which still refuses an upload that races this command.
+ */
+export async function specsConvertImport(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const file = ctx.args.positionals[0];
+  if (file === undefined) {
+    throw new Error(
+      "Usage: octri specs convert import <report.json> [--expect-spec <specId>]",
+    );
+  }
+  const reportJson = readFileSync(file, "utf8");
+  const expected =
+    flagString(ctx.args, "expect-spec") ??
+    (await api.getConverterSource(ctx.client, projectId)).specId;
+
+  const result = await withSpinner(`Importing ${dim(basename(file))}`, () =>
+    api.importConversion(ctx.client, projectId, reportJson, expected),
+  );
+
+  if (ctx.args.flags.wait !== false) {
+    await followIngestion(ctx, projectId, result.specId);
+  }
+  emit({ projectId, ...result }, () => {
+    keyValues([
+      ["spec", result.specId],
+      ["report", result.artifactId],
+    ]);
+  });
+}
+
+/** `octri specs convert report [--out conversion-report.json]` */
+export async function specsConvertReport(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const source = await api.getConverterSource(ctx.client, projectId);
+  if (source.conversionArtifactId === null) {
+    throw new Error("The current spec was not imported from the converter.");
+  }
+  const artifactId = source.conversionArtifactId;
+  const out = flagString(ctx.args, "out") ?? "conversion-report.json";
+
+  const { bytes: report } = await withSpinner("Downloading conversion report", () =>
+    api.downloadConversionReport(ctx.client, projectId, artifactId),
+  );
+  writeFileSync(out, report);
+  emit({ projectId, artifactId, path: out, bytes: report.length }, () =>
+    success(`Saved ${bold(out)} ${dim(`(${bytes(report.length)})`)}`),
+  );
 }
 
 // ─── Ingestion follower ───────────────────────────────────────────────────────

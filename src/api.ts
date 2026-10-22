@@ -11,7 +11,7 @@
  * the same `/api/v1` prefix, so they share one client.
  */
 
-import type { OctriClient } from "./client.js";
+import { ApiError, type OctriClient } from "./client.js";
 
 // ─── Shared shapes ────────────────────────────────────────────────────────────
 
@@ -59,6 +59,8 @@ export interface BuildArtifactSummary {
   status: LangBuildStatus;
   errorMessage?: string;
   downloadUrl?: string;
+  /** Permanent public download link: works signed out and counts downloads. */
+  shareUrl?: string;
   publishStatus?: string;
   registry?: string;
   registryPackageName?: string;
@@ -83,6 +85,8 @@ export interface Artifact {
   version: string;
   fileSizeBytes?: number;
   downloadCount?: number;
+  /** Permanent public download link: works signed out and counts downloads. */
+  shareUrl?: string;
   publishStatus?: string;
   registry?: string;
   registryPackageName?: string;
@@ -141,6 +145,8 @@ export interface McpTool {
   description?: string;
   inputSchema?: unknown;
 }
+
+export type McpToolPolicy = "auto" | "confirm" | "off";
 
 // ─── Auth / identity ──────────────────────────────────────────────────────────
 
@@ -1463,10 +1469,23 @@ export interface NavTab {
   items?: unknown[];
 }
 
+export type NavButtonStyle = "plain" | "outline" | "primary";
+
+export interface NavButton {
+  label: string;
+  url: string;
+  style: NavButtonStyle;
+}
+
 export function getNav(
   client: OctriClient,
   projectId: string,
-): Promise<{ sections: unknown; tabs: NavTab[]; hasDraft: boolean }> {
+): Promise<{
+  sections: unknown;
+  tabs: NavTab[];
+  hasDraft: boolean;
+  buttons?: NavButton[];
+}> {
   return client.request(`/projects/${projectId}/nav`);
 }
 
@@ -1648,6 +1667,18 @@ export interface GitHubStatus {
   webhookId?: string;
   lastSyncedAt?: string;
   lastSyncedSha?: string;
+  docsSync?: GitHubDocsSync;
+}
+
+/** Docs sync on push: repo MDX/Markdown under `folder` rewrites page drafts. */
+export interface GitHubDocsSync {
+  enabled: boolean;
+  /** Below the repo root, with a trailing slash; "" is the whole repo. */
+  folder: string;
+  links: { repoPath: string; guideId: string }[];
+  lastSyncedAt?: string;
+  lastSyncedSha?: string;
+  lastError?: string;
 }
 
 export function githubStatus(
@@ -1730,4 +1761,808 @@ export function getJob(
   jobId: string,
 ): Promise<Record<string, unknown>> {
   return client.request(`/projects/${projectId}/jobs/${jobId}`);
+}
+
+// ─── README quickstart ────────────────────────────────────────────────────────
+
+/** Slugs of the endpoints marked as the README quickstart. */
+export function quickstartSlugs(endpoints: Record<string, unknown>): string[] {
+  return Object.entries(endpoints)
+    .filter(
+      ([, config]) =>
+        (config as { quickstart?: unknown } | null)?.quickstart === true,
+    )
+    .map(([slug]) => slug);
+}
+
+/**
+ * An endpoint's slug from what a person or agent typed: the slug itself, an
+ * operationId, or `METHOD /path`.
+ */
+export async function resolveEndpointSlug(
+  client: OctriClient,
+  projectId: string,
+  typed: string,
+): Promise<string> {
+  const wanted = typed.trim();
+  const operations = await listOperations(client, projectId);
+  const [method, path] = wanted.split(/\s+/, 2);
+  const match = operations.find(
+    (op) =>
+      op.slug === wanted ||
+      op.operationId === wanted ||
+      (path !== undefined &&
+        op.method.toUpperCase() === method?.toUpperCase() &&
+        op.path === path),
+  );
+  if (match?.slug === undefined) {
+    throw new Error(`No endpoint "${wanted}".`);
+  }
+  return match.slug;
+}
+
+/**
+ * Marks or unmarks an endpoint as the README quickstart. It is per-endpoint
+ * SDK config, so this publishes the settings at the next revision, the same
+ * write `sdk settings set` makes.
+ */
+export async function setQuickstart(
+  client: OctriClient,
+  projectId: string,
+  endpointRef: string,
+  on: boolean,
+  changelog?: string,
+): Promise<{ slug: string; revision: number }> {
+  const slug = await resolveEndpointSlug(client, projectId, endpointRef);
+  const bundle = await getSdkSettings(client, projectId);
+
+  const endpoints = { ...bundle.sdkEndpoints };
+  const config = {
+    ...((endpoints[slug] as Record<string, unknown> | undefined) ?? {}),
+  };
+  if (on) config["quickstart"] = true;
+  else delete config["quickstart"];
+  endpoints[slug] = config;
+
+  await putSdkSettings(client, projectId, {
+    settings: bundle.sdkSettings,
+    endpoints,
+    revision: bundle.revision,
+    ...(changelog === undefined ? {} : { changelog }),
+  });
+  return { slug, revision: bundle.revision + 1 };
+}
+
+// ─── Binary downloads ─────────────────────────────────────────────────────────
+
+/**
+ * GET a binary body (a zip, a report file). `raw` hands back the Response
+ * unchecked, so a failed request is turned into the same ApiError a JSON
+ * route would raise.
+ */
+export async function downloadBytes(
+  client: OctriClient,
+  path: string,
+  timeoutMs = 120_000,
+): Promise<{ bytes: Buffer; filename: string | undefined }> {
+  const response = await client.request<Response>(path, { raw: true, timeoutMs });
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `Download failed (${response.status})`;
+    let code = String(response.status);
+    try {
+      const parsed = JSON.parse(text) as {
+        error?: { code?: string; message?: string };
+      };
+      message = parsed.error?.message ?? message;
+      code = parsed.error?.code ?? code;
+    } catch {
+      // Not JSON: keep the status line.
+    }
+    throw new ApiError(message, response.status, code, text, path);
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1];
+  return { bytes: Buffer.from(await response.arrayBuffer()), filename };
+}
+
+// ─── MCP server management ────────────────────────────────────────────────────
+
+/** One operation tool as the owner sees it: `off` tools included. */
+export interface McpOwnerTool {
+  /** Stable endpoint slug; the key permissions are stored under. */
+  slug: string;
+  name: string;
+  description?: string;
+  deprecated?: boolean;
+  http: { method: string; path: string };
+  policy?: McpToolPolicy;
+  destructive?: boolean;
+}
+
+export interface McpPolicyEntry {
+  policy?: McpToolPolicy;
+  destructive?: boolean;
+}
+
+export interface McpOwnerTools {
+  tools: McpOwnerTool[];
+  policies: Record<string, McpPolicyEntry>;
+  policiesRevision: number;
+}
+
+export function getMcpOwnerTools(
+  client: OctriClient,
+  projectId: string,
+): Promise<McpOwnerTools> {
+  return client.request(`/projects/${projectId}/mcp/tools`);
+}
+
+/**
+ * Publishes the whole permission map. `revision` is the one read with it; a
+ * teammate's publish in between makes the API answer 409 instead of
+ * overwriting their change.
+ */
+export function publishMcpPolicies(
+  client: OctriClient,
+  projectId: string,
+  policies: Record<string, McpPolicyEntry>,
+  revision: number,
+): Promise<{
+  policies: Record<string, McpPolicyEntry>;
+  policiesRevision: number;
+}> {
+  return client.request(`/projects/${projectId}/mcp/policies`, {
+    method: "PUT",
+    body: { policies, revision },
+  });
+}
+
+/** Reads run unasked; anything else asks first. Mirrors the API's default. */
+export function defaultMcpPolicy(method: string): McpToolPolicy {
+  return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())
+    ? "auto"
+    : "confirm";
+}
+
+/**
+ * Changes one tool's permission and publishes the map. `toolRef` is the tool
+ * name or its endpoint slug. Read and write share one revision, so a
+ * teammate's publish in between fails with 409 instead of being lost.
+ */
+export async function setMcpToolPolicy(
+  client: OctriClient,
+  projectId: string,
+  toolRef: string,
+  change: McpPolicyEntry,
+): Promise<{ tool: McpOwnerTool; entry: McpPolicyEntry; policiesRevision: number }> {
+  const current = await getMcpOwnerTools(client, projectId);
+  const tool = current.tools.find((t) => t.name === toolRef || t.slug === toolRef);
+  if (tool === undefined) {
+    throw new Error(`No MCP tool named "${toolRef}".`);
+  }
+  const entry: McpPolicyEntry = { ...current.policies[tool.slug], ...change };
+  const result = await publishMcpPolicies(
+    client,
+    projectId,
+    { ...current.policies, [tool.slug]: entry },
+    current.policiesRevision,
+  );
+  return { tool, entry, policiesRevision: result.policiesRevision };
+}
+
+export interface McpToolUsage {
+  tool: string;
+  calls: number;
+  ok: number;
+  errors: number;
+  declined: number;
+  blocked: number;
+  lastCalledAt: string;
+  clients: string[];
+}
+
+export function getMcpUsage(
+  client: OctriClient,
+  projectId: string,
+  days = 30,
+): Promise<{ days: number; totalCalls: number; tools: McpToolUsage[] }> {
+  return client.request(`/projects/${projectId}/mcp/usage`, {
+    query: { days },
+  });
+}
+
+export interface McpRecentCall {
+  id: string;
+  tool: string;
+  outcome: "ok" | "error" | "declined" | "blocked" | "dry_run";
+  calledAt: string;
+  client?: string;
+  durationMs?: number;
+}
+
+export async function listMcpCalls(
+  client: OctriClient,
+  projectId: string,
+): Promise<McpRecentCall[]> {
+  const body = await client.request<{ calls?: McpRecentCall[] }>(
+    `/projects/${projectId}/mcp/calls`,
+  );
+  return body.calls ?? [];
+}
+
+export interface McpPackageRelease {
+  id: string;
+  packageName: string;
+  version: string;
+  status: "publishing" | "published" | "failed";
+  toolCount: number;
+  requestedAt: string;
+  settledAt?: string;
+  url?: string;
+  error?: string;
+}
+
+/** The project's MCP server as an npm package under the customer's own name. */
+export interface McpPackage {
+  packageName: string;
+  binName: string;
+  envPrefix: string;
+  nextVersion: string;
+  toolCount: number;
+  npmLinked: boolean;
+  releases: McpPackageRelease[];
+}
+
+export function getMcpPackage(
+  client: OctriClient,
+  projectId: string,
+): Promise<McpPackage> {
+  return client.request(`/projects/${projectId}/mcp/package`);
+}
+
+export function downloadMcpPackage(
+  client: OctriClient,
+  projectId: string,
+): Promise<{ bytes: Buffer; filename: string | undefined }> {
+  return downloadBytes(client, `/projects/${projectId}/mcp/package/download`);
+}
+
+/** Absent `version`: the next patch after the last published one. */
+export function publishMcpPackage(
+  client: OctriClient,
+  projectId: string,
+  version?: string,
+): Promise<McpPackageRelease> {
+  return client.request(`/projects/${projectId}/mcp/package/publish`, {
+    method: "POST",
+    body: version === undefined ? {} : { version },
+    timeoutMs: 180_000,
+  });
+}
+
+// ─── Docs: redirects, home page, nav buttons ──────────────────────────────────
+
+export interface DocsRedirect {
+  /** The old path, optionally ending in `/*`. */
+  from: string;
+  /** Where readers go instead; ends in `/*` only when `from` does. */
+  to: string;
+  /** A page's own redirect (set from its Rename dialog). */
+  force?: boolean;
+}
+
+/**
+ * `redirects` is the working copy: the draft when one is pending, otherwise
+ * what is live. `POST /nav/publish` moves a draft live.
+ */
+export interface DocsRedirects {
+  redirects: DocsRedirect[];
+  published: DocsRedirect[];
+  pending: boolean;
+}
+
+export function getRedirects(
+  client: OctriClient,
+  projectId: string,
+): Promise<DocsRedirects> {
+  return client.request(`/projects/${projectId}/redirects`);
+}
+
+/** Replaces the drafted list, in order. */
+export function putRedirects(
+  client: OctriClient,
+  projectId: string,
+  redirects: DocsRedirect[],
+): Promise<DocsRedirects> {
+  return client.request(`/projects/${projectId}/redirects`, {
+    method: "PUT",
+    body: { redirects },
+  });
+}
+
+export interface DocsHomeSetting {
+  guideId: string;
+  hideSidebar: boolean;
+}
+
+/** Same working-copy shape as redirects: drafted until `nav publish`. */
+export interface DocsHome {
+  home: DocsHomeSetting | null;
+  published: DocsHomeSetting | null;
+  pending: boolean;
+}
+
+export function getDocsHome(
+  client: OctriClient,
+  projectId: string,
+): Promise<DocsHome> {
+  return client.request(`/projects/${projectId}/home`);
+}
+
+/** `guideId: null` drafts "no home page". */
+export function putDocsHome(
+  client: OctriClient,
+  projectId: string,
+  guideId: string | null,
+  hideSidebar?: boolean,
+): Promise<DocsHome> {
+  return client.request(`/projects/${projectId}/home`, {
+    method: "PUT",
+    body: { guideId, ...(hideSidebar === undefined ? {} : { hideSidebar }) },
+  });
+}
+
+/** Buttons have no draft: they apply on save. At most three. */
+export async function putNavButtons(
+  client: OctriClient,
+  projectId: string,
+  buttons: NavButton[],
+): Promise<NavButton[]> {
+  const body = await client.request<{ buttons?: NavButton[] }>(
+    `/projects/${projectId}/nav/buttons`,
+    { method: "PUT", body: { buttons } },
+  );
+  return body.buttons ?? [];
+}
+
+// ─── Docs: custom components ──────────────────────────────────────────────────
+
+export interface ComponentProp {
+  name: string;
+  type: "string" | "number" | "boolean" | "color" | "node" | "select";
+  defaultValue?: string;
+  description?: string;
+  options?: string[];
+}
+
+export interface DocsComponent {
+  id: string;
+  name: string;
+  description: string;
+  props: ComponentProp[];
+  sourceType: "visual" | "mdx";
+  tree?: unknown;
+  sourceMdx?: string;
+  customCss?: string;
+  version?: number;
+}
+
+/** What a create or update sends. A visual component sends its JSX. */
+export interface ComponentInput {
+  name?: string;
+  description?: string;
+  props?: ComponentProp[];
+  sourceType?: "visual" | "mdx";
+  sourceJsx?: string;
+  sourceMdx?: string;
+  customCss?: string;
+}
+
+export async function listComponents(
+  client: OctriClient,
+  projectId: string,
+): Promise<DocsComponent[]> {
+  const body = await client.request<{ components?: DocsComponent[] }>(
+    `/projects/${projectId}/components`,
+  );
+  return body.components ?? [];
+}
+
+export async function listBuiltInComponents(
+  client: OctriClient,
+  projectId: string,
+): Promise<string[]> {
+  const body = await client.request<{ components?: string[] }>(
+    `/projects/${projectId}/components/built-in`,
+  );
+  return body.components ?? [];
+}
+
+export async function getComponent(
+  client: OctriClient,
+  projectId: string,
+  componentId: string,
+): Promise<DocsComponent> {
+  const body = await client.request<{ component: DocsComponent }>(
+    `/projects/${projectId}/components/${encodeURIComponent(componentId)}`,
+  );
+  return body.component;
+}
+
+export function createComponent(
+  client: OctriClient,
+  projectId: string,
+  input: ComponentInput,
+): Promise<{ component: DocsComponent; warnings?: string[] }> {
+  return client.request(`/projects/${projectId}/components`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function updateComponent(
+  client: OctriClient,
+  projectId: string,
+  componentId: string,
+  input: ComponentInput,
+): Promise<{ component: DocsComponent; warnings?: string[] }> {
+  return client.request(
+    `/projects/${projectId}/components/${encodeURIComponent(componentId)}`,
+    { method: "PATCH", body: input },
+  );
+}
+
+/** Finds a component by name first, then by id. */
+export async function findComponent(
+  client: OctriClient,
+  projectId: string,
+  ref: string,
+): Promise<DocsComponent | undefined> {
+  const components = await listComponents(client, projectId);
+  return components.find((c) => c.name === ref) ?? components.find((c) => c.id === ref);
+}
+
+/** Create-or-update by name, so a repo's components push without ids. */
+export async function saveComponent(
+  client: OctriClient,
+  projectId: string,
+  name: string,
+  input: ComponentInput,
+): Promise<{ created: boolean; component: DocsComponent; warnings?: string[] }> {
+  const existing = await findComponent(client, projectId, name);
+  const result =
+    existing === undefined
+      ? await createComponent(client, projectId, { name, ...input })
+      : await updateComponent(client, projectId, existing.id, input);
+  return { created: existing === undefined, ...result };
+}
+
+export function deleteComponent(
+  client: OctriClient,
+  projectId: string,
+  componentId: string,
+): Promise<unknown> {
+  return client.request(
+    `/projects/${projectId}/components/${encodeURIComponent(componentId)}`,
+    { method: "DELETE" },
+  );
+}
+
+// ─── Draft endpoints ──────────────────────────────────────────────────────────
+
+/** An endpoint added, or marked for removal, ahead of the next docs publish. */
+export interface DraftEndpoint {
+  id: string;
+  action: "add" | "delete";
+  method: string;
+  path: string;
+  summary: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listDraftEndpoints(
+  client: OctriClient,
+  projectId: string,
+): Promise<DraftEndpoint[]> {
+  const body = await client.request<{ drafts?: DraftEndpoint[] }>(
+    `/projects/${projectId}/draft-endpoints`,
+  );
+  return body.drafts ?? [];
+}
+
+export async function createDraftEndpoint(
+  client: OctriClient,
+  projectId: string,
+  input: { method: string; path: string; summary: string; description?: string },
+): Promise<DraftEndpoint> {
+  const body = await client.request<{ draft: DraftEndpoint }>(
+    `/projects/${projectId}/draft-endpoints`,
+    { method: "POST", body: input },
+  );
+  return body.draft;
+}
+
+/** Marks an endpoint the spec already has for removal on the next publish. */
+export async function markEndpointDeletion(
+  client: OctriClient,
+  projectId: string,
+  input: { method: string; path: string },
+): Promise<DraftEndpoint> {
+  const body = await client.request<{ draft: DraftEndpoint }>(
+    `/projects/${projectId}/draft-endpoints/deletions`,
+    { method: "POST", body: input },
+  );
+  return body.draft;
+}
+
+export async function updateDraftEndpoint(
+  client: OctriClient,
+  projectId: string,
+  draftId: string,
+  input: { summary?: string; description?: string },
+): Promise<DraftEndpoint> {
+  const body = await client.request<{ draft: DraftEndpoint }>(
+    `/projects/${projectId}/draft-endpoints/${encodeURIComponent(draftId)}`,
+    { method: "PATCH", body: input },
+  );
+  return body.draft;
+}
+
+export function discardDraftEndpoint(
+  client: OctriClient,
+  projectId: string,
+  draftId: string,
+): Promise<unknown> {
+  return client.request(
+    `/projects/${projectId}/draft-endpoints/${encodeURIComponent(draftId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * Writes every draft into the spec as a new version. `published` is null when
+ * there was nothing to apply. `commitToGithub` overrides the docs setting for
+ * this publish only.
+ */
+export function publishDraftEndpoints(
+  client: OctriClient,
+  projectId: string,
+  commitToGithub?: boolean,
+): Promise<{
+  published: {
+    specId: string;
+    endpointCount: number;
+    added: number;
+    removed: number;
+  } | null;
+}> {
+  return client.request(`/projects/${projectId}/draft-endpoints/publish`, {
+    method: "POST",
+    body: commitToGithub === undefined ? {} : { commitToGithub },
+    timeoutMs: 180_000,
+  });
+}
+
+// ─── Project webhooks ─────────────────────────────────────────────────────────
+
+export type WebhookType = "slack" | "discord" | "generic";
+
+export interface Webhook {
+  id: string;
+  type: WebhookType;
+  label: string;
+  events: string[];
+  enabled: boolean;
+  /** Origin and first path segment only: the full URL is stored encrypted. */
+  urlPreview: string;
+  lastDeliveryAt?: string | null;
+  lastDeliveryStatus?: string | null;
+  consecutiveFailures?: number;
+  createdAt?: string;
+}
+
+export async function listWebhooks(
+  client: OctriClient,
+  projectId: string,
+): Promise<Webhook[]> {
+  const body = await client.request<{ webhooks?: Webhook[] }>(
+    `/projects/${projectId}/webhooks`,
+    { query: { limit: 100 } },
+  );
+  return body.webhooks ?? [];
+}
+
+export async function listWebhookEvents(
+  client: OctriClient,
+  projectId: string,
+): Promise<string[]> {
+  const body = await client.request<{ events?: string[] }>(
+    `/projects/${projectId}/webhooks/events`,
+  );
+  return body.events ?? [];
+}
+
+/** The signing secret comes back once, here, and never again. */
+export function createWebhook(
+  client: OctriClient,
+  projectId: string,
+  input: {
+    type: WebhookType;
+    url: string;
+    events: string[];
+    label: string;
+    enabled?: boolean;
+  },
+): Promise<{ webhook: Webhook; signingSecret: string }> {
+  return client.request(`/projects/${projectId}/webhooks`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function updateWebhook(
+  client: OctriClient,
+  projectId: string,
+  webhookId: string,
+  input: { url?: string; events?: string[]; label?: string; enabled?: boolean },
+): Promise<Webhook> {
+  const body = await client.request<{ webhook: Webhook }>(
+    `/projects/${projectId}/webhooks/${encodeURIComponent(webhookId)}`,
+    { method: "PATCH", body: input },
+  );
+  return body.webhook;
+}
+
+export function deleteWebhook(
+  client: OctriClient,
+  projectId: string,
+  webhookId: string,
+): Promise<unknown> {
+  return client.request(
+    `/projects/${projectId}/webhooks/${encodeURIComponent(webhookId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Queues a `test.ping` delivery; its result shows up in the deliveries. */
+export function testWebhook(
+  client: OctriClient,
+  projectId: string,
+  webhookId: string,
+): Promise<{ queued: boolean }> {
+  return client.request(
+    `/projects/${projectId}/webhooks/${encodeURIComponent(webhookId)}/test`,
+    { method: "POST", body: {} },
+  );
+}
+
+export interface WebhookDelivery {
+  id: string;
+  event: string;
+  status: "success" | "failure";
+  httpCode?: number;
+  error?: string;
+  attempt: number;
+  attemptedAt: string;
+  durationMs?: number;
+}
+
+export function listWebhookDeliveries(
+  client: OctriClient,
+  projectId: string,
+  webhookId: string,
+  options: { limit?: number; status?: "success" | "failure" } = {},
+): Promise<{ deliveries: WebhookDelivery[]; total: number }> {
+  return client.request(
+    `/projects/${projectId}/webhooks/${encodeURIComponent(webhookId)}/deliveries`,
+    { query: { limit: options.limit ?? 25, status: options.status } },
+  );
+}
+
+// ─── Spec converter and audit source ──────────────────────────────────────────
+
+export interface ConverterSource {
+  specId: string | null;
+  /** The current spec's raw text. */
+  content: string | null;
+  importTargets: string[];
+  maxReportBytes: number;
+  /** Set when the current spec came from a converter import. */
+  conversionArtifactId: string | null;
+}
+
+export function getConverterSource(
+  client: OctriClient,
+  projectId: string,
+): Promise<ConverterSource> {
+  return client.request(`/projects/${projectId}/sdk/converter/source`);
+}
+
+/**
+ * Imports a conversion report exported from the spec converter. The API
+ * re-runs the conversion from the report and ingests the result as the new
+ * current spec, but only while `expectedCurrentSpecId` is still current.
+ */
+export function importConversion(
+  client: OctriClient,
+  projectId: string,
+  reportJson: string,
+  expectedCurrentSpecId: string | null,
+): Promise<{ specId: string; artifactId: string; jobs: string[] }> {
+  return client.request(`/projects/${projectId}/sdk/converter/import`, {
+    method: "POST",
+    body: { reportJson, expectedCurrentSpecId },
+    timeoutMs: 120_000,
+  });
+}
+
+/** The stored conversion report behind a converted spec. */
+export function downloadConversionReport(
+  client: OctriClient,
+  projectId: string,
+  artifactId: string,
+): Promise<{ bytes: Buffer; filename: string | undefined }> {
+  return downloadBytes(
+    client,
+    `/projects/${projectId}/sdk/converter/artifacts/${encodeURIComponent(artifactId)}`,
+  );
+}
+
+/** The current spec's raw text with the audit rules the project ignores. */
+export function getAuditSource(
+  client: OctriClient,
+  projectId: string,
+): Promise<{ specId: string; content: string; ignored: unknown }> {
+  return client.request(`/projects/${projectId}/sdk/audit/source`);
+}
+
+// ─── GitHub docs pull and sync ────────────────────────────────────────────────
+
+export interface GitHubDocsListing {
+  owner: string;
+  repo: string;
+  branch: string;
+  files: { path: string; size: number }[];
+  truncated: boolean;
+}
+
+/** The connected repo's `.mdx` and `.md` files. */
+export function listGithubDocsFiles(
+  client: OctriClient,
+  projectId: string,
+): Promise<GitHubDocsListing> {
+  return client.request(`/projects/${projectId}/github/docs-files`, {
+    timeoutMs: 120_000,
+  });
+}
+
+export function readGithubDocsFiles(
+  client: OctriClient,
+  projectId: string,
+  paths: string[],
+): Promise<{
+  files: { path: string; content: string }[];
+  skipped: { path: string; reason: "not_found" | "too_large" }[];
+}> {
+  return client.request(`/projects/${projectId}/github/docs-files/read`, {
+    method: "POST",
+    body: { paths },
+    timeoutMs: 120_000,
+  });
+}
+
+/** Pushes still only rewrite drafts: a page reaches readers on Publish. */
+export function setGithubDocsSync(
+  client: OctriClient,
+  projectId: string,
+  enabled: boolean,
+  folder: string,
+): Promise<GitHubStatus> {
+  return client.request(`/projects/${projectId}/github/docs-sync`, {
+    method: "PUT",
+    body: { enabled, folder },
+  });
 }

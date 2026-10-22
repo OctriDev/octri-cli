@@ -65,6 +65,28 @@ octri docs domain set docs.example.com
 `docs domain` prints the CNAME and TXT records to create, then `docs domain
 verify` checks them.
 
+The site's structure is drafted like it is in the API Studio. Redirects, the
+home page and draft endpoints wait for a publish; nav buttons apply on save:
+
+```bash
+octri docs redirects add /old-guide /guides/install
+octri docs home set <guideId>
+octri docs nav publish
+
+octri docs endpoints add POST /refunds --summary "Refund a payment"
+octri docs endpoints publish
+
+octri docs components push ./components/Banner.jsx
+octri docs buttons add "Sign up" https://app.example.com --style primary
+```
+
+A component file holds the markup alone: one root element, HTML attribute
+names (`class`, not `className`), and props written as `{name}`.
+
+In Git Bash on Windows, a lone argument starting with `/` is rewritten into a
+Windows path before the CLI sees it. Set `MSYS_NO_PATHCONV=1`, or use
+PowerShell, for commands that take docs paths.
+
 ## Monitoring
 
 Reads and triage run on your session, so they need nothing but a login:
@@ -105,15 +127,16 @@ or the service has nothing to pair a trace with.
 | `auth` | `login` · `logout` · `whoami` · `token` · `profiles` |
 | `config` | `list` · `set <k> <v>` · `use <profile>` · `path` |
 | `projects` | `list` · `show` · `create` · `use` · `current` |
-| `specs` | `list` · `push <file\|->` · `import <url>` · `status` · `delete` |
-| `sdk` | `languages` · `operations` · `settings get\|set` · `validate` · `audit` · `preview` · `build` · `builds` · `watch` · `artifacts` · `download` · `retry` · `publish` · `repos` · `stats` |
-| `docs` | `pages [generate\|regenerate\|publish\|title]` · `show <slug>` · `guides` · `nav` · `versions` · `domain` · `changelog` |
+| `specs` | `list` · `push <file\|->` · `import <url>` · `status` · `delete` · `convert [import\|report]` |
+| `sdk` | `languages` · `operations` · `settings get\|set` · `validate` · `audit [apply\|ignore\|source]` · `quickstart [set\|unset]` · `preview` · `build` · `builds` · `watch` · `artifacts` · `download` · `retry` · `publish` · `repos` · `stats` |
+| `docs` | `pages [generate\|regenerate\|publish\|title]` · `show <slug>` · `guides` · `nav` · `redirects` · `home` · `buttons` · `components` · `endpoints` · `versions` · `domain` · `changelog` |
 | `monitoring` | `status` · `enable` · `summary` · `issues` · `issue <id>` · `resolve\|ignore\|reopen\|comment` · `logs` · `traces` · `performance` · `releases` · `alerts` · `checks` · `sourcemaps upload` · `sources upload` · `config` |
 | `orgs` | `list` · `show` · `switch` · `usage` · `billing` · `invoices` · `members` · `invites` |
 | `keys` | `list` · `create <name>` · `revoke <id>` |
-| `github` | `status` · `connect <owner/repo>` · `sync` · `auto-sync <on\|off>` |
+| `github` | `status` · `connect <owner/repo>` · `sync` · `auto-sync <on\|off>` · `docs [pull\|sync]` |
+| `webhooks` | `list` · `events` · `create <url>` · `update <id>` · `test <id>` · `deliveries <id>` · `delete <id>` |
 | `jobs` | `list` · `show <id>` |
-| `mcp` | `tools` · `serve` |
+| `mcp` | `tools` · `permissions [set]` · `usage` · `calls` · `package [download\|publish]` · `serve` |
 
 Run `octri <group> --help` for one group on its own.
 
@@ -197,8 +220,9 @@ is needed:
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=octri&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40octri%2Fcli%22%2C%22mcp%22%2C%22serve%22%5D%7D)
 
 The server uses the profile from `octri auth login`, so sign in first, or set
-`OCTRI_API_KEY` in its environment. Listed in the official MCP Registry as
-`dev.octri/cli`.
+`OCTRI_API_KEY` in its environment. An API key reaches the public routes only:
+the docs, webhook and MCP-management tools need the signed-in profile. Listed
+in the official MCP Registry as `dev.octri/cli`.
 
 ```jsonc
 // Claude Desktop / Cursor
@@ -213,12 +237,12 @@ The server uses the profile from `octri auth login`, so sign in first, or set
 ```
 
 Credentials come from your stored profile and the assistant never sees them.
-Reads are open. The two operations you cannot take back are refused unless you
+Reads are open. The operations you cannot take back are refused unless you
 start the server with the flag for them:
 
 ```bash
-octri mcp serve --allow-publish   # publishing to package registries
-octri mcp serve --allow-delete    # deleting specs
+octri mcp serve --allow-publish   # publishing SDKs or your MCP package to registries
+octri mcp serve --allow-delete    # deleting specs, components or webhooks
 ```
 
 Tool failures come back as tool results rather than protocol errors, so an

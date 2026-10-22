@@ -16,10 +16,15 @@ export interface ParsedArgs {
   rest: string[];
 }
 
-/** Flags that take no value, needed to disambiguate `--watch build-id`. */
+/**
+ * Flags that take no value, needed to disambiguate `--watch build-id`.
+ *
+ * `version` is deliberately absent: `sdk build`, `sdk settings set` and
+ * `lab run` take `--version 2.0.0`. A bare `octri --version` still parses as
+ * `true`, since nothing follows it, and prints the CLI's version.
+ */
 const BOOLEAN_FLAGS = new Set([
   "help",
-  "version",
   "json",
   "quiet",
   "plain",
@@ -39,6 +44,11 @@ const BOOLEAN_FLAGS = new Set([
   "include-body",
   "diff",
   "stdin",
+  "destructive",
+  "hide-sidebar",
+  "commit-to-github",
+  "enable",
+  "disable",
 ]);
 
 const ALIASES: Record<string, string> = {

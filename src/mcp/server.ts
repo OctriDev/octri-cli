@@ -6,11 +6,11 @@
  * two runs, instead of clicking through the web UI, which costs an order of
  * magnitude more tokens per step and cannot be replayed.
  *
- * Safety posture: reads are unrestricted, mutations are grouped, and the two
- * genuinely destructive things (publishing to public registries, deleting specs)
- * are refused unless the operator started the server with `--allow-publish` /
- * `--allow-delete`. Credentials come from the stored profile; the agent never
- * sees them.
+ * Safety posture: reads are unrestricted, mutations are grouped, and the
+ * genuinely destructive things (publishing SDKs or the project's MCP package to
+ * public registries; deleting specs, components or webhooks) are refused unless
+ * the operator started the server with `--allow-publish` / `--allow-delete`.
+ * Credentials come from the stored profile; the agent never sees them.
  */
 
 import { createHash } from "node:crypto";
@@ -378,6 +378,348 @@ function tools(options: ServeOptions): Tool[] {
         range: { type: "string", enum: ["1h", "6h", "24h", "7d", "30d", "90d"] },
       }),
     },
+
+    // ── The project's own MCP server ─────────────────────────────────────────
+    {
+      name: "octri_get_mcp_permissions",
+      description:
+        "Every operation tool of the project's own MCP server, `off` ones included, with its policy (auto runs unasked, confirm asks the person first, off is not offered) and whether it is destructive. Absent policy means the method's default: auto for GET, confirm otherwise.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_mcp_permission",
+      description:
+        "Change one tool's permission and publish it to agents immediately. Takes the tool name or endpoint slug from octri_get_mcp_permissions. Fails with a conflict if a teammate published in between: read again and retry.",
+      inputSchema: schema(
+        {
+          tool: { type: "string", description: "Tool name or endpoint slug." },
+          policy: { type: "string", enum: ["auto", "confirm", "off"] },
+          destructive: {
+            type: "boolean",
+            description: "Whether a call can destroy or overwrite data.",
+          },
+        },
+        ["tool"],
+      ),
+    },
+    {
+      name: "octri_mcp_usage",
+      description:
+        "How agents used the project's MCP tools: calls per tool split into ok, errors, declined and blocked, with the clients seen.",
+      inputSchema: schema({
+        days: { type: "number", description: "Window in days. Defaults to 30." },
+      }),
+    },
+    {
+      name: "octri_list_mcp_calls",
+      description: "The latest individual tool calls agents made, newest first.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_get_mcp_package",
+      description:
+        "The npm package that ships the project's MCP server under the customer's name: package and command names, the version a publish would use, whether an npm account is linked, and past releases.",
+      inputSchema: schema({}),
+    },
+
+    // ── Docs IA: redirects, home page, nav buttons ───────────────────────────
+    {
+      name: "octri_list_redirects",
+      description:
+        "Docs redirect rules. `redirects` is the working copy (the draft when `pending`), `published` is what readers get. Drafts go live with the docs nav publish.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_redirects",
+      description:
+        "Replace the drafted redirect list, in order. Read it with octri_list_redirects first and send the whole edited list. A `from` may end in /*, and then its `to` must too. Readers see it after the docs nav is published.",
+      inputSchema: schema(
+        {
+          redirects: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                from: { type: "string" },
+                to: { type: "string" },
+                force: { type: "boolean" },
+              },
+              required: ["from", "to"],
+            },
+          },
+        },
+        ["redirects"],
+      ),
+    },
+    {
+      name: "octri_get_docs_home",
+      description:
+        "Which guide the docs site serves at /, and whether its sidebar is hidden. Drafted like redirects.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_docs_home",
+      description:
+        "Draft the docs home page: a guide id, or null for no home page. Readers see it after the docs nav is published.",
+      inputSchema: schema(
+        {
+          guide_id: { type: ["string", "null"] },
+          hide_sidebar: { type: "boolean" },
+        },
+        ["guide_id"],
+      ),
+    },
+    {
+      name: "octri_set_nav_buttons",
+      description:
+        "Replace the docs top nav's call-to-action buttons (at most 3). Unlike the rest of the IA they have no draft: they go live on save. A url is http(s), mailto:, or a path starting with /.",
+      inputSchema: schema(
+        {
+          buttons: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string" },
+                url: { type: "string" },
+                style: { type: "string", enum: ["plain", "outline", "primary"] },
+              },
+              required: ["label", "url"],
+            },
+          },
+        },
+        ["buttons"],
+      ),
+    },
+
+    // ── Docs: custom components ──────────────────────────────────────────────
+    {
+      name: "octri_list_components",
+      description: "The project's custom docs components, with ids, props and source type.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_get_component",
+      description: "One custom component with its source (MDX, or the stored tree of a visual one).",
+      inputSchema: schema({ component: { type: "string", description: "Name or id." } }, ["component"]),
+    },
+    {
+      name: "octri_save_component",
+      description:
+        "Create or update a custom component by name. A visual component's `source` is its markup alone: one root element, HTML attribute names (class, not className), props as {name}, no imports, exports or function. Set source_type `mdx` for an MDX one. Returns compiler warnings.",
+      inputSchema: schema(
+        {
+          name: { type: "string", description: "PascalCase, e.g. Banner." },
+          source: { type: "string" },
+          source_type: { type: "string", enum: ["visual", "mdx"] },
+          description: { type: "string" },
+          custom_css: { type: "string" },
+          props: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                type: {
+                  type: "string",
+                  enum: ["string", "number", "boolean", "color", "node", "select"],
+                },
+                defaultValue: { type: "string" },
+                description: { type: "string" },
+                options: { type: "array", items: { type: "string" } },
+              },
+              required: ["name", "type"],
+            },
+          },
+        },
+        ["name", "source"],
+      ),
+    },
+
+    // ── Draft endpoints ──────────────────────────────────────────────────────
+    {
+      name: "octri_list_draft_endpoints",
+      description:
+        "Endpoints added, or marked for removal, that the next publish will write into the spec.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_add_draft_endpoint",
+      description:
+        "Draft a new endpoint. Nothing reaches the spec, docs, SDKs or MCP until octri_publish_draft_endpoints.",
+      inputSchema: schema(
+        {
+          method: { type: "string", description: "HTTP method, e.g. GET." },
+          path: { type: "string", description: "OpenAPI path, e.g. /users/{id}." },
+          summary: { type: "string" },
+          description: { type: "string" },
+        },
+        ["method", "path", "summary"],
+      ),
+    },
+    {
+      name: "octri_mark_endpoint_deletion",
+      description: "Mark an endpoint the spec has for removal on the next publish.",
+      inputSchema: schema(
+        { method: { type: "string" }, path: { type: "string" } },
+        ["method", "path"],
+      ),
+    },
+    {
+      name: "octri_update_draft_endpoint",
+      description: "Change a draft's summary or description. The method and path are fixed.",
+      inputSchema: schema(
+        {
+          draft_id: { type: "string" },
+          summary: { type: "string" },
+          description: { type: "string" },
+        },
+        ["draft_id"],
+      ),
+    },
+    {
+      name: "octri_discard_draft_endpoint",
+      description: "Drop a draft without publishing it.",
+      inputSchema: schema({ draft_id: { type: "string" } }, ["draft_id"]),
+    },
+    {
+      name: "octri_publish_draft_endpoints",
+      description:
+        "Write every draft into the spec as a new version, which then regenerates docs, SDKs and MCP. `commit_to_github` overrides the docs setting for this publish.",
+      inputSchema: schema({ commit_to_github: { type: "boolean" } }),
+    },
+
+    // ── Webhooks ─────────────────────────────────────────────────────────────
+    {
+      name: "octri_list_webhooks",
+      description:
+        "Project webhooks with their events, state and a redacted URL. octri_list_webhook_events lists the events.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_list_webhook_events",
+      description: "Every event a webhook can subscribe to.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_create_webhook",
+      description:
+        "Create a webhook. The URL must be HTTPS. The response carries the signing secret, which is never returned again: hand it to the person.",
+      inputSchema: schema(
+        {
+          url: { type: "string" },
+          events: { type: "array", items: { type: "string" } },
+          type: { type: "string", enum: ["slack", "discord", "generic"] },
+          label: { type: "string" },
+        },
+        ["url", "events", "label"],
+      ),
+    },
+    {
+      name: "octri_update_webhook",
+      description: "Change a webhook's URL, events, label, or enable/disable it.",
+      inputSchema: schema(
+        {
+          webhook_id: { type: "string" },
+          url: { type: "string" },
+          events: { type: "array", items: { type: "string" } },
+          label: { type: "string" },
+          enabled: { type: "boolean" },
+        },
+        ["webhook_id"],
+      ),
+    },
+    {
+      name: "octri_test_webhook",
+      description: "Queue a test.ping delivery. Its result appears in octri_list_webhook_deliveries.",
+      inputSchema: schema({ webhook_id: { type: "string" } }, ["webhook_id"]),
+    },
+    {
+      name: "octri_list_webhook_deliveries",
+      description: "A webhook's delivery history, newest first, with HTTP codes and errors.",
+      inputSchema: schema(
+        {
+          webhook_id: { type: "string" },
+          status: { type: "string", enum: ["success", "failure"] },
+          limit: { type: "number" },
+        },
+        ["webhook_id"],
+      ),
+    },
+
+    // ── Spec source, converter, quickstart ───────────────────────────────────
+    {
+      name: "octri_get_spec_source",
+      description:
+        "The current spec's raw text, as the auditor scores it, with the audit findings the project ignores.",
+      inputSchema: schema({
+        max_bytes: { type: "number", description: "Truncate the spec text. Defaults to 200000." },
+      }),
+    },
+    {
+      name: "octri_get_converter_status",
+      description:
+        "Whether the current spec came from the spec converter, the formats it imports, and the report size limit.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_import_conversion",
+      description:
+        "Import a conversion report exported from the spec converter. The API re-runs the conversion and ingests the result as the new current spec, only while `expected_spec_id` is still current (defaults to the spec current now).",
+      inputSchema: schema(
+        {
+          report_json: { type: "string", description: "The report file's text." },
+          expected_spec_id: { type: "string" },
+        },
+        ["report_json"],
+      ),
+    },
+    {
+      name: "octri_get_quickstart",
+      description:
+        "Endpoints marked as the README quickstart, the headline example in every SDK's README. None means the generator picks one.",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_set_quickstart",
+      description:
+        "Mark or unmark an endpoint as the README quickstart. Takes a slug, operationId, or `METHOD /path`. Publishes the SDK settings at the next revision.",
+      inputSchema: schema(
+        {
+          endpoint: { type: "string" },
+          on: { type: "boolean", description: "false unmarks. Defaults to true." },
+        },
+        ["endpoint"],
+      ),
+    },
+
+    // ── GitHub docs ──────────────────────────────────────────────────────────
+    {
+      name: "octri_list_github_docs_files",
+      description:
+        "The connected repo's .mdx and .md files, and the docs sync setting (which folder, whether pushes rewrite page drafts).",
+      inputSchema: schema({}),
+    },
+    {
+      name: "octri_read_github_docs_files",
+      description: "Read up to 50 docs files from the connected repo by path.",
+      inputSchema: schema(
+        { paths: { type: "array", items: { type: "string" } } },
+        ["paths"],
+      ),
+    },
+    {
+      name: "octri_set_github_docs_sync",
+      description:
+        "Turn docs sync on push on or off. On, every push touching an .mdx/.md file under `folder` rewrites that page's draft; readers still see it only after Publish.",
+      inputSchema: schema(
+        {
+          enabled: { type: "boolean" },
+          folder: { type: "string", description: "e.g. docs/. Empty is the whole repo." },
+        },
+        ["enabled"],
+      ),
+    },
   ];
 
   if (options.allowPublish) {
@@ -394,6 +736,12 @@ function tools(options: ServeOptions): Tool[] {
         ["build_id"],
       ),
     });
+    list.push({
+      name: "octri_publish_mcp_package",
+      description:
+        "Publish the project's MCP server to npm under the customer's package name, using the linked npm account. Irreversible. Omit `version` for the next patch.",
+      inputSchema: schema({ version: { type: "string" } }),
+    });
   }
 
   if (options.allowDelete) {
@@ -401,6 +749,17 @@ function tools(options: ServeOptions): Tool[] {
       name: "octri_delete_spec",
       description: "Permanently delete a spec from a project.",
       inputSchema: schema({ spec_id: { type: "string" } }, ["spec_id"]),
+    });
+    list.push({
+      name: "octri_delete_component",
+      description:
+        "Permanently delete a custom docs component. Pages that use it stop rendering it.",
+      inputSchema: schema({ component: { type: "string", description: "Name or id." } }, ["component"]),
+    });
+    list.push({
+      name: "octri_delete_webhook",
+      description: "Permanently delete a webhook and its delivery history.",
+      inputSchema: schema({ webhook_id: { type: "string" } }, ["webhook_id"]),
     });
   }
 
@@ -442,6 +801,21 @@ function stringList(args: Args, key: string): string[] {
   const value = args[key];
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+/** Copies an optional boolean argument through only when the agent supplied one. */
+function optionalBoolean(args: Args, key: string): Record<string, boolean> {
+  const value = args[key];
+  return typeof value === "boolean" ? { [key]: value } : {};
+}
+
+/** An array of objects; anything else in it is dropped. The API validates the fields. */
+function objectList(args: Args, key: string): Args[] {
+  const value = args[key];
+  if (!Array.isArray(value)) throw new Error(`\`${key}\` must be an array.`);
+  return value.filter(
+    (item): item is Args => typeof item === "object" && item !== null && !Array.isArray(item),
+  );
 }
 
 async function dispatch(
@@ -744,6 +1118,295 @@ async function dispatch(
 
     case "octri_list_sdk_repos":
       return { repos: await api.listRepos(client, projectOf(ctx, args)) };
+
+    // ── The project's own MCP server ─────────────────────────────────────────
+
+    case "octri_get_mcp_permissions":
+      return api.getMcpOwnerTools(client, projectOf(ctx, args));
+
+    case "octri_set_mcp_permission": {
+      const policy = args.policy;
+      if (policy !== undefined && policy !== "auto" && policy !== "confirm" && policy !== "off") {
+        throw new Error("`policy` must be auto, confirm or off.");
+      }
+      if (policy === undefined && typeof args.destructive !== "boolean") {
+        throw new Error("Pass `policy`, `destructive`, or both.");
+      }
+      const { tool, entry, policiesRevision } = await api.setMcpToolPolicy(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "tool"),
+        {
+          ...(policy === undefined ? {} : { policy }),
+          ...optionalBoolean(args, "destructive"),
+        },
+      );
+      return { tool: tool.name, slug: tool.slug, ...entry, policiesRevision };
+    }
+
+    case "octri_mcp_usage":
+      return api.getMcpUsage(client, projectOf(ctx, args), numberArg(args, "days", 30));
+
+    case "octri_list_mcp_calls":
+      return { calls: await api.listMcpCalls(client, projectOf(ctx, args)) };
+
+    case "octri_get_mcp_package":
+      return api.getMcpPackage(client, projectOf(ctx, args));
+
+    // ── Docs IA ──────────────────────────────────────────────────────────────
+
+    case "octri_list_redirects":
+      return api.getRedirects(client, projectOf(ctx, args));
+
+    case "octri_set_redirects":
+      return api.putRedirects(
+        client,
+        projectOf(ctx, args),
+        objectList(args, "redirects") as unknown as api.DocsRedirect[],
+      );
+
+    case "octri_get_docs_home":
+      return api.getDocsHome(client, projectOf(ctx, args));
+
+    case "octri_set_docs_home": {
+      const guideId = args.guide_id;
+      if (guideId !== null && (typeof guideId !== "string" || guideId === "")) {
+        throw new Error("`guide_id` is a guide id, or null for no home page.");
+      }
+      return api.putDocsHome(
+        client,
+        projectOf(ctx, args),
+        guideId,
+        typeof args.hide_sidebar === "boolean" ? args.hide_sidebar : undefined,
+      );
+    }
+
+    case "octri_set_nav_buttons":
+      return {
+        buttons: await api.putNavButtons(
+          client,
+          projectOf(ctx, args),
+          objectList(args, "buttons").map((b) => ({
+            label: String(b.label ?? ""),
+            url: String(b.url ?? ""),
+            style: (b.style ?? "plain") as api.NavButtonStyle,
+          })),
+        ),
+      };
+
+    // ── Docs: custom components ──────────────────────────────────────────────
+
+    case "octri_list_components":
+      return { components: await api.listComponents(client, projectOf(ctx, args)) };
+
+    case "octri_get_component": {
+      const projectId = projectOf(ctx, args);
+      const ref = stringArg(args, "component");
+      const found = await api.findComponent(client, projectId, ref);
+      if (found === undefined) throw new Error(`No component named "${ref}".`);
+      return api.getComponent(client, projectId, found.id);
+    }
+
+    case "octri_save_component": {
+      const mdx = args.source_type === "mdx";
+      const source = stringArg(args, "source");
+      const props = objectList(args, "props");
+      return api.saveComponent(client, projectOf(ctx, args), stringArg(args, "name"), {
+        sourceType: mdx ? "mdx" : "visual",
+        ...(mdx ? { sourceMdx: source } : { sourceJsx: source }),
+        ...(typeof args.description === "string" ? { description: args.description } : {}),
+        ...(typeof args.custom_css === "string" ? { customCss: args.custom_css } : {}),
+        ...(props.length > 0 ? { props: props as unknown as api.ComponentProp[] } : {}),
+      });
+    }
+
+    // ── Draft endpoints ──────────────────────────────────────────────────────
+
+    case "octri_list_draft_endpoints":
+      return { drafts: await api.listDraftEndpoints(client, projectOf(ctx, args)) };
+
+    case "octri_add_draft_endpoint":
+      return api.createDraftEndpoint(client, projectOf(ctx, args), {
+        method: stringArg(args, "method").toUpperCase(),
+        path: stringArg(args, "path"),
+        summary: stringArg(args, "summary"),
+        ...optionalString(args, "description"),
+      });
+
+    case "octri_mark_endpoint_deletion":
+      return api.markEndpointDeletion(client, projectOf(ctx, args), {
+        method: stringArg(args, "method").toUpperCase(),
+        path: stringArg(args, "path"),
+      });
+
+    case "octri_update_draft_endpoint":
+      return api.updateDraftEndpoint(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "draft_id"),
+        { ...optionalString(args, "summary"), ...optionalString(args, "description") },
+      );
+
+    case "octri_discard_draft_endpoint":
+      await api.discardDraftEndpoint(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "draft_id"),
+      );
+      return { ok: true };
+
+    case "octri_publish_draft_endpoints":
+      return api.publishDraftEndpoints(
+        client,
+        projectOf(ctx, args),
+        typeof args.commit_to_github === "boolean" ? args.commit_to_github : undefined,
+      );
+
+    // ── Webhooks ─────────────────────────────────────────────────────────────
+
+    case "octri_list_webhooks":
+      return { webhooks: await api.listWebhooks(client, projectOf(ctx, args)) };
+
+    case "octri_list_webhook_events":
+      return { events: await api.listWebhookEvents(client, projectOf(ctx, args)) };
+
+    case "octri_create_webhook": {
+      const type = stringArg(args, "type", "generic");
+      if (type !== "slack" && type !== "discord" && type !== "generic") {
+        throw new Error("`type` must be slack, discord or generic.");
+      }
+      return api.createWebhook(client, projectOf(ctx, args), {
+        type,
+        url: stringArg(args, "url"),
+        events: stringList(args, "events"),
+        label: stringArg(args, "label"),
+      });
+    }
+
+    case "octri_update_webhook": {
+      const events = stringList(args, "events");
+      return api.updateWebhook(client, projectOf(ctx, args), stringArg(args, "webhook_id"), {
+        ...optionalString(args, "url"),
+        ...optionalString(args, "label"),
+        ...(events.length > 0 ? { events } : {}),
+        ...optionalBoolean(args, "enabled"),
+      });
+    }
+
+    case "octri_test_webhook":
+      return api.testWebhook(client, projectOf(ctx, args), stringArg(args, "webhook_id"));
+
+    case "octri_list_webhook_deliveries": {
+      const status = args.status;
+      return api.listWebhookDeliveries(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "webhook_id"),
+        {
+          limit: numberArg(args, "limit", 25),
+          ...(status === "success" || status === "failure" ? { status } : {}),
+        },
+      );
+    }
+
+    // ── Spec source, converter, quickstart ───────────────────────────────────
+
+    case "octri_get_spec_source": {
+      const source = await api.getAuditSource(client, projectOf(ctx, args));
+      const limit = numberArg(args, "max_bytes", 200_000);
+      return {
+        specId: source.specId,
+        ignored: source.ignored,
+        bytes: source.content.length,
+        truncated: source.content.length > limit,
+        content: source.content.slice(0, limit),
+      };
+    }
+
+    case "octri_get_converter_status": {
+      // The spec text belongs to octri_get_spec_source; this answers "was it converted".
+      const { content, ...status } = await api.getConverterSource(client, projectOf(ctx, args));
+      return { ...status, specBytes: content?.length ?? 0 };
+    }
+
+    case "octri_import_conversion": {
+      const projectId = projectOf(ctx, args);
+      const expected =
+        typeof args.expected_spec_id === "string" && args.expected_spec_id !== ""
+          ? args.expected_spec_id
+          : (await api.getConverterSource(client, projectId)).specId;
+      return api.importConversion(client, projectId, stringArg(args, "report_json"), expected);
+    }
+
+    case "octri_get_quickstart": {
+      const bundle = await api.getSdkSettings(client, projectOf(ctx, args));
+      return { quickstart: api.quickstartSlugs(bundle.sdkEndpoints) };
+    }
+
+    case "octri_set_quickstart":
+      return api.setQuickstart(
+        client,
+        projectOf(ctx, args),
+        stringArg(args, "endpoint"),
+        args.on !== false,
+      );
+
+    // ── GitHub docs ──────────────────────────────────────────────────────────
+
+    case "octri_list_github_docs_files": {
+      const projectId = projectOf(ctx, args);
+      const [status, listing] = await Promise.all([
+        api.githubStatus(client, projectId),
+        api.listGithubDocsFiles(client, projectId),
+      ]);
+      return { docsSync: status.docsSync ?? null, ...listing };
+    }
+
+    case "octri_read_github_docs_files":
+      return api.readGithubDocsFiles(client, projectOf(ctx, args), stringList(args, "paths"));
+
+    case "octri_set_github_docs_sync": {
+      const projectId = projectOf(ctx, args);
+      if (typeof args.enabled !== "boolean") throw new Error("`enabled` is required.");
+      const folder =
+        typeof args.folder === "string"
+          ? args.folder
+          : ((await api.githubStatus(client, projectId)).docsSync?.folder ?? "");
+      const status = await api.setGithubDocsSync(client, projectId, args.enabled, folder);
+      return { docsSync: status.docsSync ?? null };
+    }
+
+    case "octri_publish_mcp_package": {
+      if (!ctx.options.allowPublish) {
+        throw new Error("Publishing is disabled. Restart with --allow-publish.");
+      }
+      const version = args.version;
+      return api.publishMcpPackage(
+        client,
+        projectOf(ctx, args),
+        typeof version === "string" && version !== "" ? version : undefined,
+      );
+    }
+
+    case "octri_delete_component": {
+      if (!ctx.options.allowDelete) {
+        throw new Error("Deletion is disabled. Restart with --allow-delete.");
+      }
+      const projectId = projectOf(ctx, args);
+      const ref = stringArg(args, "component");
+      const found = await api.findComponent(client, projectId, ref);
+      if (found === undefined) throw new Error(`No component named "${ref}".`);
+      await api.deleteComponent(client, projectId, found.id);
+      return { ok: true, id: found.id, name: found.name };
+    }
+
+    case "octri_delete_webhook": {
+      if (!ctx.options.allowDelete) {
+        throw new Error("Deletion is disabled. Restart with --allow-delete.");
+      }
+      await api.deleteWebhook(client, projectOf(ctx, args), stringArg(args, "webhook_id"));
+      return { ok: true };
+    }
 
     case "octri_publish_build": {
       if (!ctx.options.allowPublish) {
