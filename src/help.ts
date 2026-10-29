@@ -269,6 +269,10 @@ const GROUPS: Group[] = [
       { usage: "mcp usage", description: "Agent calls per tool (--days 30)" },
       { usage: "mcp calls", description: "Latest tool calls" },
       {
+        usage: "mcp score",
+        description: "Tool quality out of 10 (--tool, --all, --fail-under 7)",
+      },
+      {
         usage: "mcp package",
         description: "npm package under your name (download · publish)",
       },

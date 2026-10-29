@@ -18,6 +18,7 @@ import {
   emit,
   heading,
   keyValues,
+  line,
   note,
   relativeTime,
   success,
@@ -274,4 +275,92 @@ export async function mcpPackagePublish(ctx: Context): Promise<void> {
     );
     note("octri mcp package: follow the release status");
   });
+}
+
+function gradeLabel(grade: string | null): string {
+  if (grade === null) return dim("-");
+  if (grade === "A" || grade === "B") return green(grade);
+  if (grade === "C") return yellow(grade);
+  return red(grade);
+}
+
+function scoreText(score: number | null): string {
+  return score === null ? "-" : score.toFixed(1);
+}
+
+/**
+ * `octri mcp score [--tool <name>] [--all] [--fail-under <0-10>]`
+ *
+ * The tool quality score of what agents are served, out of 10: worst tools
+ * first, server findings, and the rules that cost the most. `--tool` prints one
+ * tool's findings and suggested rewrites. Read only: fixes are accepted on the
+ * MCP page and shipped by Publish. `--fail-under` exits 1 below the threshold,
+ * for CI.
+ */
+export async function mcpScore(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const failUnder = flagNumber(ctx.args, "fail-under");
+  if (ctx.args.flags["fail-under"] !== undefined && (failUnder === undefined || failUnder < 0 || failUnder > 10)) {
+    throw new Error("--fail-under takes a score from 0 to 10.");
+  }
+  const toolRef = flagString(ctx.args, "tool");
+  const { report, history } = await withSpinner("Scoring MCP tools", () => api.getMcpQuality(ctx.client, projectId));
+  const below = failUnder !== undefined && report.score !== null && report.score < failUnder;
+
+  if (toolRef !== undefined) {
+    const tool = report.tools.find((t) => t.name === toolRef || t.slug === toolRef);
+    if (tool === undefined) throw new Error(`No served tool is called "${toolRef}".`);
+    emit({ projectId, tool }, () => {
+      heading(`${tool.name} ${dim(`${scoreText(tool.score)} / 10`)} ${gradeLabel(tool.grade)}`);
+      keyValues([["tokens", `about ${tool.tokens.toLocaleString("en-US")} per turn`]]);
+      for (const finding of tool.findings.filter((f) => f.severity !== "info")) {
+        const label = finding.severity === "high" ? red("high") : finding.severity === "medium" ? yellow("medium") : dim(finding.severity);
+        line();
+        line(`  ${label}  ${finding.message}`);
+        for (const suggestion of finding.suggestions ?? []) {
+          const target = suggestion.target.kind === "field" ? `input ${suggestion.target.inputName ?? ""}` : suggestion.target.kind;
+          line(`    ${dim(`${target}${suggestion.needsEdit ? ", read first" : ""}:`)} ${suggestion.after}`);
+        }
+      }
+      note("Accept fixes on the MCP page; Publish ships them to agents.");
+    });
+  } else {
+    const shown = flagBool(ctx.args, "all") ? report.tools : report.tools.slice(0, 15);
+    emit({ projectId, ...report, history }, () => {
+      heading(`MCP tool quality ${bold(`${scoreText(report.score)} / 10`)} ${gradeLabel(report.grade)}`);
+      const previous = history[1]?.score;
+      keyValues([
+        ["definitions", scoreText(report.definitions)],
+        ["coherence", scoreText(report.coherence)],
+        ["listing", report.mode === "search" ? "search mode" : "every tool"],
+        ["tokens listed", `about ${report.tokens.listed.toLocaleString("en-US")}`],
+        ...(previous !== undefined && previous !== null && history[0]?.score !== null && history[0] !== undefined
+          ? ([["last publish", `${scoreText(history[0].score)} (was ${scoreText(previous)})`]] as [string, string][])
+          : []),
+      ]);
+      table(
+        shown,
+        [
+          { header: "tool", value: (t) => bold(t.name), flex: 2, minWidth: 18 },
+          { header: "grade", value: (t) => gradeLabel(t.grade), flex: 6 },
+          { header: "score", value: (t) => scoreText(t.score), align: "right", flex: 6 },
+          {
+            header: "top finding",
+            value: (t) => dim(t.findings.find((f) => f.severity === "high" || f.severity === "medium")?.message ?? ""),
+            flex: 1,
+            minWidth: 20,
+          },
+        ],
+        { emptyMessage: "No tools are served. Push a spec, or switch tools on from the MCP page." },
+      );
+      if (shown.length < report.tools.length) note(`${report.tools.length - shown.length} more; --all lists every tool.`);
+      for (const finding of report.findings) warn(finding.message);
+      note("octri mcp score --tool <name> shows one tool's suggested rewrites.");
+    });
+  }
+
+  if (below) {
+    warn(`Score ${scoreText(report.score)} is under --fail-under ${String(failUnder)}.`);
+    process.exitCode = 1;
+  }
 }

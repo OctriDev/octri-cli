@@ -1923,6 +1923,60 @@ export function publishMcpPolicies(
   });
 }
 
+/** One tool quality finding, as `GET /projects/:id/mcp/quality` reports it. */
+export interface McpQualityFinding {
+  key: string;
+  ruleId: string;
+  severity: "high" | "medium" | "advice" | "info";
+  message: string;
+  suggestions?: {
+    target: { kind: "name" | "description" | "field"; field?: string; inputName?: string };
+    before?: string;
+    after: string;
+    source: "rule" | "ai";
+    needsEdit: boolean;
+  }[];
+}
+
+export interface McpQualityTool {
+  key: string;
+  kind: "operation" | "chain";
+  slug: string;
+  name: string;
+  /** Out of 10. */
+  score: number;
+  grade: string;
+  tokens: number;
+  findings: McpQualityFinding[];
+}
+
+/** The tool quality score of what agents are served, out of 10, graded A to F. */
+export interface McpQualityReport {
+  score: number | null;
+  grade: string | null;
+  maxScore: number;
+  definitions: number | null;
+  coherence: number | null;
+  mode: "all" | "search";
+  tokens: { definitions: number; listed: number };
+  /** Worst first. */
+  tools: McpQualityTool[];
+  findings: McpQualityFinding[];
+  byRule: { ruleId: string; title: string; findings: number }[];
+}
+
+export interface McpQualityResponse {
+  report: McpQualityReport;
+  /** Published scores, newest first. */
+  history: { revision: number; score: number | null; createdAt: string }[];
+  ignored: string[];
+}
+
+/** The MCP tool quality score. Read only: fixes are accepted on the MCP page and shipped by Publish. */
+export function getMcpQuality(client: OctriClient, projectId: string): Promise<McpQualityResponse> {
+  return client.request(`/projects/${projectId}/mcp/quality`);
+}
+
 /** Reads run unasked; anything else asks first. Mirrors the API's default. */
 export function defaultMcpPolicy(method: string): McpToolPolicy {
   return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())

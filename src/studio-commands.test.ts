@@ -16,7 +16,7 @@ import {
 } from "./commands/docs-settings.js";
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
-import { mcpPermissionSet } from "./commands/mcp.js";
+import { mcpPermissionSet, mcpScore } from "./commands/mcp.js";
 import { sdkQuickstartSet } from "./commands/sdk.js";
 import { webhooksCreate, webhooksUpdate } from "./commands/webhooks.js";
 import { PROXY_VARIABLES } from "./proxy.js";
@@ -109,6 +109,54 @@ test("the new boolean flags do not swallow the next word", () => {
 
   const off = parse(["mcp", "permissions", "set", "deleteUser", "--no-destructive"]);
   assert.equal(off.flags["destructive"], false);
+});
+
+// ─── MCP tool quality ─────────────────────────────────────────────────────────
+
+const QUALITY = {
+  report: {
+    score: 5.4,
+    grade: "C",
+    maxScore: 10,
+    definitions: 4.6,
+    coherence: 7.2,
+    mode: "all",
+    tokens: { definitions: 900, listed: 900 },
+    tools: [{
+      key: "get-pets",
+      kind: "operation",
+      slug: "get-pets",
+      name: "list_pets",
+      score: 4.2,
+      grade: "C",
+      tokens: 300,
+      findings: [{ key: "get-pets|description-usage", ruleId: "description-usage", severity: "medium", message: "Nothing says when to use this tool." }],
+    }],
+    findings: [],
+    byRule: [{ ruleId: "description-usage", title: "Description says when to use it", findings: 1 }],
+  },
+  history: [{ revision: 2, score: 5.4, createdAt: "2026-10-29T00:00:00Z" }],
+  ignored: [],
+};
+
+test("mcp score only reads, and fails CI under --fail-under", async () => {
+  await withApi({ "GET /projects/p1/mcp/quality": QUALITY }, async (calls) => {
+    process.exitCode = undefined;
+    await mcpScore(context(["mcp", "score", "--fail-under", "7"], false));
+    assert.equal(process.exitCode, 1);
+    assert.deepEqual(calls.map((c) => c.method), ["GET"]);
+    process.exitCode = undefined;
+    await mcpScore(context(["mcp", "score", "--fail-under", "5"], false));
+    assert.equal(process.exitCode, undefined);
+  });
+});
+
+test("mcp score refuses a threshold off the 10-point scale, and an unknown --tool", async () => {
+  await withApi({ "GET /projects/p1/mcp/quality": QUALITY }, async () => {
+    await assert.rejects(mcpScore(context(["mcp", "score", "--fail-under", "70"], false)), /0 to 10/);
+    await assert.rejects(mcpScore(context(["mcp", "score", "--tool", "nope"], false)), /No served tool/);
+    await mcpScore(context(["mcp", "score", "--tool", "list_pets"], false));
+  });
 });
 
 // ─── MCP permissions ──────────────────────────────────────────────────────────

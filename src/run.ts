@@ -153,6 +153,7 @@ const ROUTES: Record<string, Handler> = {
   "mcp tools": docs.mcpTools,
   "mcp usage": mcp.mcpUsage,
   "mcp calls": mcp.mcpCalls,
+  "mcp score": mcp.mcpScore,
 
   // webhooks
   webhooks: webhooks.webhooksList,
