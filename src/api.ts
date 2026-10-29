@@ -2025,6 +2025,7 @@ export interface McpDraftBody {
   toolMode?: string;
   outageWarnings?: boolean;
   changeNotices?: boolean;
+  practiceMode?: boolean;
   errorGuides?: Record<string, string>;
 }
 

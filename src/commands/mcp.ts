@@ -463,7 +463,7 @@ export async function mcpTest(ctx: Context): Promise<void> {
     const listing = await withSpinner("Reading the published tools", () => api.getMcpPublishedListing(ctx.client, projectId));
     // Only the publish body's own keys: the listing carries the tools too.
     draft = { policies: listing.policies };
-    for (const key of ["overrides", "groups", "customTools", "prompts", "resources", "toolMode", "outageWarnings", "changeNotices", "errorGuides"] as const) {
+    for (const key of ["overrides", "groups", "customTools", "prompts", "resources", "toolMode", "outageWarnings", "changeNotices", "practiceMode", "errorGuides"] as const) {
       if (listing[key] !== undefined) Object.assign(draft, { [key]: listing[key] });
     }
   }
