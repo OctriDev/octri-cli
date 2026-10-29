@@ -1977,6 +1977,84 @@ export function getMcpQuality(client: OctriClient, projectId: string): Promise<M
   return client.request(`/projects/${projectId}/mcp/quality`);
 }
 
+// ─── MCP agent test runs ────────────────────────────────────────────────────
+// Real models given the draft tools and the project's sample tasks. Mirrors
+// the shapes in @octri/shared (sdk/mcp-test-runs.ts) that this CLI reads.
+
+/** Everything Publish would ship, in the publish body's own shape. */
+export interface McpDraftBody {
+  policies: Record<string, unknown>;
+  overrides?: Record<string, unknown>;
+  groups?: unknown[];
+  customTools?: unknown[];
+  prompts?: unknown[];
+  resources?: unknown[];
+  toolMode?: string;
+  outageWarnings?: boolean;
+  errorGuides?: Record<string, string>;
+}
+
+export type McpTestVerdict = "pass" | "flaky" | "fail";
+
+export interface McpTestModelSummary {
+  model: string;
+  attempts: number;
+  passed: number;
+  passRate: number;
+  tasksPassed: number;
+  tasksFlaky: number;
+  tasksFailed: number;
+  verdict: McpTestVerdict;
+  tokensPerTask: number;
+  p95ModelMs: number;
+  costUsd: number;
+}
+
+export interface McpTestRunView {
+  id: string;
+  state: "queued" | "running" | "done" | "failed" | "cancelled";
+  fingerprint: string;
+  mode: "dry" | "live";
+  models: string[];
+  repeat: number;
+  tasks: { id: string; prompt: string }[];
+  attempts: { taskId: string; model: string; repeat: number; outcome: string; error?: string }[];
+  total: number;
+  summary?: {
+    verdict: McpTestVerdict;
+    models: McpTestModelSummary[];
+    tasks: { taskId: string; model: string; passed: number; attempts: number; verdict: McpTestVerdict }[];
+    costUsd: number;
+  };
+  error?: string;
+  createdAt: string;
+}
+
+/** The published tools as the MCP page reads them, enough to rebuild the published draft. */
+export interface McpPublishedListing extends McpDraftBody {
+  policiesRevision: number;
+}
+
+export function getMcpPublishedListing(client: OctriClient, projectId: string): Promise<McpPublishedListing> {
+  return client.request(`/projects/${projectId}/mcp/tools`);
+}
+
+export function startMcpTestRun(
+  client: OctriClient,
+  projectId: string,
+  body: { draft: McpDraftBody; models?: string[]; repeat?: number; taskIds?: string[] },
+): Promise<McpTestRunView> {
+  return client.request(`/projects/${projectId}/mcp/test-runs`, { method: "POST", body });
+}
+
+export function getMcpTestRun(client: OctriClient, projectId: string, runId: string): Promise<McpTestRunView> {
+  return client.request(`/projects/${projectId}/mcp/test-runs/${runId}`);
+}
+
+export function saveMcpTestTasks(client: OctriClient, projectId: string, tasks: unknown[]): Promise<{ tasks: { id: string }[] }> {
+  return client.request(`/projects/${projectId}/mcp/test-tasks`, { method: "PUT", body: { tasks } });
+}
+
 /** Reads run unasked; anything else asks first. Mirrors the API's default. */
 export function defaultMcpPolicy(method: string): McpToolPolicy {
   return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())

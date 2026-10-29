@@ -273,6 +273,10 @@ const GROUPS: Group[] = [
         description: "Tool quality out of 10 (--tool, --all, --fail-under 7)",
       },
       {
+        usage: "mcp test",
+        description: "Agent test run, dry (--models, --repeat, --draft, --fail-under 0.9)",
+      },
+      {
         usage: "mcp package",
         description: "npm package under your name (download · publish)",
       },

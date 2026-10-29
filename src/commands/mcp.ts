@@ -7,11 +7,11 @@
  * reader-facing surfaces; `octri mcp serve` is this CLI's own MCP server.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 
 import * as api from "../api.js";
-import { flagBool, flagNumber, flagString } from "../args.js";
+import { flagBool, flagList, flagNumber, flagString } from "../args.js";
 import { bold, dim, green, red, yellow } from "../ui/ansi.js";
 import {
   bytes,
@@ -363,4 +363,124 @@ export async function mcpScore(ctx: Context): Promise<void> {
     warn(`Score ${scoreText(report.score)} is under --fail-under ${String(failUnder)}.`);
     process.exitCode = 1;
   }
+}
+
+const VERDICT_TEXT: Record<api.McpTestVerdict, (text: string) => string> = { pass: green, flaky: yellow, fail: red };
+
+/** How long `octri mcp test` follows a run before giving up on it (the API ends a run at 15 minutes). */
+const MCP_TEST_WAIT_MS = 20 * 60_000;
+const MCP_TEST_POLL_MS = 2_000;
+
+function readJsonFile(path: string, what: string): unknown {
+  try {
+    return JSON.parse(readFileSync(resolvePath(path), "utf8")) as unknown;
+  } catch (err) {
+    throw new Error(`Could not read ${what} from ${path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * `octri mcp test [--models a,b] [--repeat N] [--task <id>,...] [--tasks <file>] [--draft <file>] [--fail-under <0-1>] [--no-wait]`
+ *
+ * Runs real models against the MCP tools on the project's sample tasks, as a
+ * dry run (every call answered from the spec's examples; your API is never
+ * called), and prints each model's pass rate. Tests what is published, or the
+ * draft in `--draft` (the MCP page's publish body). `--tasks` REPLACES the
+ * project's saved tasks with the file's before running. Exits 1 when a model
+ * fails a task, or with `--fail-under` when a model's pass rate is under it,
+ * for CI. Spends AI credits.
+ */
+export async function mcpTest(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const failUnder = flagNumber(ctx.args, "fail-under");
+  if (ctx.args.flags["fail-under"] !== undefined && (failUnder === undefined || failUnder < 0 || failUnder > 1)) {
+    throw new Error("--fail-under takes a pass rate from 0 to 1, such as 0.9.");
+  }
+  const repeat = flagNumber(ctx.args, "repeat");
+  if (ctx.args.flags.repeat !== undefined && (repeat === undefined || !Number.isInteger(repeat) || repeat < 1 || repeat > 5)) {
+    throw new Error("--repeat takes a whole number from 1 to 5.");
+  }
+  const models = flagList(ctx.args, "models");
+  const taskIds = flagList(ctx.args, "task");
+
+  const tasksFile = flagString(ctx.args, "tasks");
+  if (tasksFile !== undefined) {
+    const tasks = readJsonFile(tasksFile, "tasks");
+    if (!Array.isArray(tasks)) throw new Error("--tasks takes a JSON file holding a list of tasks.");
+    const saved = await withSpinner("Saving sample tasks", () => api.saveMcpTestTasks(ctx.client, projectId, tasks));
+    success(`Saved ${saved.tasks.length} sample ${saved.tasks.length === 1 ? "task" : "tasks"}.`);
+  }
+
+  const draftFile = flagString(ctx.args, "draft");
+  let draft: api.McpDraftBody;
+  if (draftFile !== undefined) {
+    draft = readJsonFile(draftFile, "the draft") as api.McpDraftBody;
+  } else {
+    const listing = await withSpinner("Reading the published tools", () => api.getMcpPublishedListing(ctx.client, projectId));
+    // Only the publish body's own keys: the listing carries the tools too.
+    draft = { policies: listing.policies };
+    for (const key of ["overrides", "groups", "customTools", "prompts", "resources", "toolMode", "outageWarnings", "errorGuides"] as const) {
+      if (listing[key] !== undefined) Object.assign(draft, { [key]: listing[key] });
+    }
+  }
+
+  let run = await withSpinner("Queueing the test run", () =>
+    api.startMcpTestRun(ctx.client, projectId, {
+      draft,
+      ...(models.length > 0 ? { models } : {}),
+      ...(repeat !== undefined ? { repeat } : {}),
+      ...(taskIds.length > 0 ? { taskIds } : {}),
+    }));
+
+  if (ctx.args.flags.wait === false || flagBool(ctx.args, "no-wait")) {
+    emit({ projectId, run }, () => {
+      success(`Queued test run ${run.id}: ${run.total} attempts on ${run.models.join(", ")}.`);
+      note("Follow it on the MCP page.");
+    });
+    return;
+  }
+
+  const startedAt = Date.now();
+  run = await withSpinner(`Running ${run.total} attempts`, async () => {
+    let current = run;
+    while (current.state === "queued" || current.state === "running") {
+      if (Date.now() - startedAt > MCP_TEST_WAIT_MS) throw new Error(`Test run ${current.id} did not finish in time. See it on the MCP page.`);
+      await new Promise((r) => setTimeout(r, MCP_TEST_POLL_MS));
+      current = await api.getMcpTestRun(ctx.client, projectId, current.id);
+    }
+    return current;
+  });
+
+  const summary = run.summary;
+  emit({ projectId, run }, () => {
+    const verdict = summary?.verdict ?? "fail";
+    heading(`MCP agent test ${VERDICT_TEXT[verdict](verdict)}`);
+    keyValues([
+      ["run", run.id],
+      ["state", run.state],
+      ["tasks", String(run.tasks.length)],
+      ["model spend", summary !== undefined ? `$${summary.costUsd.toFixed(2)}` : "-"],
+    ]);
+    table(
+      summary?.models ?? [],
+      [
+        { header: "model", value: (m) => bold(m.model), flex: 2, minWidth: 18 },
+        { header: "verdict", value: (m) => VERDICT_TEXT[m.verdict](m.verdict), flex: 6 },
+        { header: "pass rate", value: (m) => `${Math.round(m.passRate * 100)}%`, align: "right", flex: 6 },
+        { header: "tasks", value: (m) => `${m.tasksPassed}/${m.tasksPassed + m.tasksFlaky + m.tasksFailed}`, align: "right", flex: 6 },
+        { header: "tokens/task", value: (m) => m.tokensPerTask.toLocaleString("en-US"), align: "right", flex: 6 },
+      ],
+      { emptyMessage: run.error ?? "No attempt finished." },
+    );
+    for (const task of (summary?.tasks ?? []).filter((t) => t.verdict === "fail")) {
+      const why = run.attempts.find((a) => a.taskId === task.taskId && a.model === task.model && a.outcome !== "pass");
+      warn(`${task.taskId} fails on ${task.model}${why !== undefined ? `: ${why.outcome}${why.error !== undefined ? ` (${why.error})` : ""}` : ""}`);
+    }
+    note("Transcripts are on the MCP page.");
+  });
+
+  const under = failUnder !== undefined
+    ? (summary?.models ?? []).some((m) => m.passRate < failUnder) || summary === undefined
+    : summary?.verdict !== "pass" && summary?.verdict !== "flaky";
+  if (run.state !== "done" || under) process.exitCode = 1;
 }

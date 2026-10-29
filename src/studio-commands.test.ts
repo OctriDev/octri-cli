@@ -16,7 +16,7 @@ import {
 } from "./commands/docs-settings.js";
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
-import { mcpPermissionSet, mcpScore } from "./commands/mcp.js";
+import { mcpPermissionSet, mcpScore, mcpTest } from "./commands/mcp.js";
 import { sdkQuickstartSet } from "./commands/sdk.js";
 import { webhooksCreate, webhooksUpdate } from "./commands/webhooks.js";
 import { PROXY_VARIABLES } from "./proxy.js";
@@ -157,6 +157,113 @@ test("mcp score refuses a threshold off the 10-point scale, and an unknown --too
     await assert.rejects(mcpScore(context(["mcp", "score", "--tool", "nope"], false)), /No served tool/);
     await mcpScore(context(["mcp", "score", "--tool", "list_pets"], false));
   });
+});
+
+// ─── MCP agent test runs ──────────────────────────────────────────────────────
+
+const LISTING = {
+  tools: [{ slug: "get-pets", name: "list_pets" }],
+  policies: { "get-pets": { policy: "auto" } },
+  policiesRevision: 3,
+  overrides: {},
+  groups: [],
+  customTools: [],
+  prompts: [],
+  resources: [],
+  toolMode: "auto",
+  outageWarnings: true,
+  errorGuides: {},
+};
+
+function testRun(state: string, verdicts: Record<string, "pass" | "flaky" | "fail">) {
+  const models = Object.entries(verdicts).map(([model, verdict]) => ({
+    model, attempts: 1, passed: verdict === "fail" ? 0 : 1, passRate: verdict === "fail" ? 0 : verdict === "flaky" ? 0.5 : 1,
+    tasksPassed: verdict === "pass" ? 1 : 0, tasksFlaky: verdict === "flaky" ? 1 : 0, tasksFailed: verdict === "fail" ? 1 : 0,
+    verdict, tokensPerTask: 1200, p95ModelMs: 800, costUsd: 0.004,
+  }));
+  return {
+    id: "run1", state, fingerprint: "f", mode: "dry", models: Object.keys(verdicts), repeat: 1,
+    tasks: [{ id: "gen-get-pets", prompt: "List pets." }],
+    attempts: Object.entries(verdicts).map(([model, verdict]) => ({ taskId: "gen-get-pets", model, repeat: 0, outcome: verdict === "fail" ? "wrongTool" : "pass" })),
+    total: models.length,
+    ...(state === "done"
+      ? { summary: { verdict: models.some((m) => m.verdict === "fail") ? "fail" : "pass", models, tasks: models.map((m) => ({ taskId: "gen-get-pets", model: m.model, passed: m.passed, attempts: 1, verdict: m.verdict })), costUsd: 0.008 } }
+      : {}),
+    createdAt: "2026-10-29T00:00:00Z",
+  };
+}
+
+test("mcp test runs the published draft, waits for the run, and fails CI when a model fails a task", async () => {
+  await withApi(
+    {
+      "GET /projects/p1/mcp/tools": LISTING,
+      "POST /projects/p1/mcp/test-runs": testRun("queued", {}),
+      "GET /projects/p1/mcp/test-runs/run1": testRun("done", { "claude-sonnet-5-5": "pass", "gpt-6-sol": "fail" }),
+    },
+    async (calls) => {
+      process.exitCode = undefined;
+      await mcpTest(context(["mcp", "test", "--models", "claude-sonnet-5-5,gpt-6-sol", "--repeat", "2"], false));
+      const post = calls.find((c) => c.method === "POST");
+      // The publish body's keys only: the listing's tools and revision stay behind.
+      assert.deepEqual(post?.body, {
+        draft: { policies: LISTING.policies, overrides: {}, groups: [], customTools: [], prompts: [], resources: [], toolMode: "auto", outageWarnings: true, errorGuides: {} },
+        models: ["claude-sonnet-5-5", "gpt-6-sol"],
+        repeat: 2,
+      });
+      assert.equal(process.exitCode, 1);
+      process.exitCode = undefined;
+    },
+  );
+});
+
+test("mcp test passes CI on a pass rate over --fail-under, and sends a draft file and a task subset", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "octri-mcp-test-"));
+  const draftPath = join(dir, "draft.json");
+  writeFileSync(draftPath, JSON.stringify({ policies: {}, toolMode: "search" }));
+  try {
+    await withApi(
+      { "POST /projects/p1/mcp/test-runs": testRun("done", { "claude-sonnet-5-5": "pass", "gpt-6-sol": "flaky" }) },
+      async (calls) => {
+        process.exitCode = undefined;
+        await mcpTest(context(["mcp", "test", "--draft", draftPath, "--task", "gen-get-pets", "--fail-under", "0.5"], false));
+        assert.deepEqual(calls[0]?.body, { draft: { policies: {}, toolMode: "search" }, taskIds: ["gen-get-pets"] });
+        assert.equal(process.exitCode, undefined);
+        await mcpTest(context(["mcp", "test", "--draft", draftPath, "--fail-under", "0.9"], false));
+        assert.equal(process.exitCode, 1);
+        process.exitCode = undefined;
+      },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("mcp test saves a tasks file first, and refuses bad flags", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "octri-mcp-tasks-"));
+  const tasksPath = join(dir, "tasks.json");
+  writeFileSync(tasksPath, JSON.stringify([{ id: "own-1", prompt: "List pets.", steps: [{ tools: ["list_pets"] }] }]));
+  try {
+    await withApi(
+      {
+        "PUT /projects/p1/mcp/test-tasks": (call: Call) => ({ tasks: (call.body as { tasks: unknown[] }).tasks }),
+        "GET /projects/p1/mcp/tools": LISTING,
+        "POST /projects/p1/mcp/test-runs": testRun("done", { "claude-sonnet-5-5": "pass" }),
+      },
+      async (calls) => {
+        await mcpTest(context(["mcp", "test", "--tasks", tasksPath], false));
+        assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), [
+          "PUT /projects/p1/mcp/test-tasks",
+          "GET /projects/p1/mcp/tools",
+          "POST /projects/p1/mcp/test-runs",
+        ]);
+        process.exitCode = undefined;
+      },
+    );
+    await assert.rejects(mcpTest(context(["mcp", "test", "--fail-under", "90"], false)), /0 to 1/);
+    await assert.rejects(mcpTest(context(["mcp", "test", "--repeat", "9"], false)), /1 to 5/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ─── MCP permissions ──────────────────────────────────────────────────────────
