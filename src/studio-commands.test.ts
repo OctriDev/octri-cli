@@ -16,7 +16,7 @@ import {
 } from "./commands/docs-settings.js";
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
-import { mcpPermissionSet, mcpScore, mcpTest } from "./commands/mcp.js";
+import { mcpPermissionSet, mcpScore, mcpTest, mcpWorkflows } from "./commands/mcp.js";
 import { sdkQuickstartSet } from "./commands/sdk.js";
 import { webhooksCreate, webhooksUpdate } from "./commands/webhooks.js";
 import { PROXY_VARIABLES } from "./proxy.js";
@@ -156,6 +156,31 @@ test("mcp score refuses a threshold off the 10-point scale, and an unknown --too
     await assert.rejects(mcpScore(context(["mcp", "score", "--fail-under", "70"], false)), /0 to 10/);
     await assert.rejects(mcpScore(context(["mcp", "score", "--tool", "nope"], false)), /No served tool/);
     await mcpScore(context(["mcp", "score", "--tool", "list_pets"], false));
+  });
+});
+
+// ─── MCP guide workflows ──────────────────────────────────────────────────────
+
+const WORKFLOWS = {
+  mode: "selected",
+  guides: [
+    { id: "g1", slug: "accept-a-payment", title: "Accept a payment", published: true, fingerprint: "0123456789abcdef", calls: 3, workflow: { status: "current", tool: "accept_a_payment", prompt: "accept_a_payment", served: true } },
+    { id: "g2", slug: "refunds", title: "Refunds", published: true, fingerprint: "fedcba9876543210", calls: 1, workflow: { status: "stale", tool: "refunds", served: true } },
+    { id: "g3", slug: "concepts", title: "Concepts", published: true, fingerprint: "0000000000000000", calls: 0 },
+  ],
+  orphans: [],
+};
+
+test("mcp workflows only reads, and --stale fails CI when a guide moved on", async () => {
+  await withApi({ "GET /projects/p1/mcp/guide-workflows": WORKFLOWS }, async (calls) => {
+    process.exitCode = undefined;
+    await mcpWorkflows(context(["mcp", "workflows", "--stale"], false));
+    assert.equal(process.exitCode, 1);
+    assert.deepEqual(calls.map((c) => c.method), ["GET"]);
+    process.exitCode = undefined;
+    await mcpWorkflows(context(["mcp", "workflows", "--stale", "--guide", "accept-a-payment"], false));
+    assert.equal(process.exitCode, undefined);
+    await assert.rejects(mcpWorkflows(context(["mcp", "workflows", "--guide", "nope"], false)), /No guide/);
   });
 });
 

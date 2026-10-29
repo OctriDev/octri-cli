@@ -1977,6 +1977,39 @@ export function getMcpQuality(client: OctriClient, projectId: string): Promise<M
   return client.request(`/projects/${projectId}/mcp/quality`);
 }
 
+// ─── MCP guide workflows ────────────────────────────────────────────────────
+// Mirrors GuideWorkflowGuideRow and GuideWorkflowOrphan in @octri/shared
+// (sdk/mcp-guide-workflows.ts).
+
+export interface GuideWorkflowPublished {
+  status: "current" | "stale" | "orphaned";
+  tool?: string;
+  prompt?: string;
+  served: boolean;
+}
+
+export interface GuideWorkflowGuide {
+  id: string;
+  slug: string;
+  group?: string;
+  title: string;
+  published: boolean;
+  fingerprint?: string;
+  calls: number;
+  workflow?: GuideWorkflowPublished;
+}
+
+export interface GuideWorkflowsResponse {
+  mode: "selected" | "all";
+  guides: GuideWorkflowGuide[];
+  orphans: (GuideWorkflowPublished & { guide: string; slug: string })[];
+}
+
+/** Which guides have workflow tools, and whether each is up to date. Read only. */
+export function getMcpGuideWorkflows(client: OctriClient, projectId: string): Promise<GuideWorkflowsResponse> {
+  return client.request(`/projects/${projectId}/mcp/guide-workflows`);
+}
+
 // ─── MCP agent test runs ────────────────────────────────────────────────────
 // Real models given the draft tools and the project's sample tasks. Mirrors
 // the shapes in @octri/shared (sdk/mcp-test-runs.ts) that this CLI reads.

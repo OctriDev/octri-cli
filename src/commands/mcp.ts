@@ -365,6 +365,50 @@ export async function mcpScore(ctx: Context): Promise<void> {
   }
 }
 
+const WORKFLOW_STATUS: Record<api.GuideWorkflowPublished["status"], string> = {
+  current: green("up to date"),
+  stale: yellow("guide changed"),
+  orphaned: red("guide gone"),
+};
+
+/**
+ * `octri mcp workflows [--guide <slug>] [--stale]`
+ *
+ * Which guides have a workflow tool and prompt, and whether each still matches
+ * the published guide. Read only: workflows are made and updated on the MCP
+ * page and shipped by Publish. `--stale` exits 1 when any is out of date,
+ * for CI after a docs change.
+ */
+export async function mcpWorkflows(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const only = flagString(ctx.args, "guide");
+  const body = await withSpinner("Reading guide workflows", () => api.getMcpGuideWorkflows(ctx.client, projectId));
+  const guides = only !== undefined ? body.guides.filter((g) => g.slug === only || g.id === only) : body.guides;
+  if (only !== undefined && guides.length === 0) throw new Error(`No guide is called "${only}".`);
+  const outOfDate = [...guides.filter((g) => g.workflow !== undefined && g.workflow.status !== "current"), ...(only === undefined ? body.orphans : [])];
+
+  emit({ projectId, mode: body.mode, guides, orphans: body.orphans }, () => {
+    heading(`Guide workflows ${dim(body.mode === "all" ? "every published guide" : "guides you pick")}`);
+    table(
+      guides,
+      [
+        { header: "guide", value: (g) => bold(g.title), flex: 2, minWidth: 18 },
+        { header: "tool", value: (g) => g.workflow?.tool ?? dim(g.published ? (g.calls > 0 ? "none yet" : "no API calls") : "unpublished"), flex: 2, minWidth: 14 },
+        { header: "state", value: (g) => (g.workflow !== undefined ? WORKFLOW_STATUS[g.workflow.status] : ""), flex: 3 },
+        { header: "served", value: (g) => (g.workflow === undefined ? "" : g.workflow.served ? "yes" : dim("off")), flex: 6 },
+      ],
+      { emptyMessage: "This project has no guides yet." },
+    );
+    for (const orphan of only === undefined ? body.orphans : []) warn(`${orphan.tool ?? orphan.prompt ?? orphan.slug} was made from a guide that no longer exists (${orphan.slug}).`);
+    note("Make and update workflows on the MCP page; Publish ships them to agents.");
+  });
+
+  if (flagBool(ctx.args, "stale") && outOfDate.length > 0) {
+    warn(`${outOfDate.length} guide workflow${outOfDate.length === 1 ? " is" : "s are"} out of date.`);
+    process.exitCode = 1;
+  }
+}
+
 const VERDICT_TEXT: Record<api.McpTestVerdict, (text: string) => string> = { pass: green, flaky: yellow, fail: red };
 
 /** How long `octri mcp test` follows a run before giving up on it (the API ends a run at 15 minutes). */
