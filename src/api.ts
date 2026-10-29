@@ -2024,6 +2024,7 @@ export interface McpDraftBody {
   resources?: unknown[];
   toolMode?: string;
   outageWarnings?: boolean;
+  changeNotices?: boolean;
   errorGuides?: Record<string, string>;
 }
 
