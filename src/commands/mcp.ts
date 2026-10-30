@@ -252,6 +252,56 @@ export async function mcpPackageDownload(ctx: Context): Promise<void> {
 }
 
 /**
+ * `octri mcp plugin [--download <dir>] [--practice]`
+ *
+ * The project's Claude Code plugin: its version, install lines, commands and
+ * skill. `--download` saves the plugin's zip (one folder, for
+ * `claude --plugin-dir`); `--practice` takes its practice twin. Read only:
+ * the plugin's settings go out with MCP Publish.
+ */
+export async function mcpPlugin(ctx: Context): Promise<void> {
+  const projectId = ctx.projectId();
+  const plugin = await withSpinner("Reading the Claude Code plugin", () => api.getMcpClaudePlugin(ctx.client, projectId));
+  const dir = flagString(ctx.args, "download");
+  if (dir !== undefined) {
+    if (!plugin.planAllows) throw new Error("The Claude Code plugin is included from the Starter plan.");
+    const variant = flagBool(ctx.args, "practice") ? "practice" : "main";
+    const { bytes: zip, filename } = await withSpinner("Downloading the plugin", () => api.downloadMcpClaudePlugin(ctx.client, projectId, variant));
+    const out = resolvePath(dir);
+    mkdirSync(out, { recursive: true });
+    const name = filename !== undefined && /^[A-Za-z0-9._-]+\.zip$/.test(filename) ? filename : "claude-plugin.zip";
+    const path = join(out, name);
+    writeFileSync(path, zip);
+    emit({ projectId, path, bytes: zip.length }, () => success(`Saved ${bold(path)} ${dim(`(${bytes(zip.length)})`)}`));
+    return;
+  }
+
+  emit({ projectId, ...plugin }, () => {
+    heading(`Claude Code plugin ${bold(plugin.name)} ${dim(plugin.version)}`);
+    if (!plugin.planAllows) note("Included from the Starter plan.");
+    if (plugin.marketplaceUrl !== null) {
+      console.log(`  /plugin marketplace add ${plugin.marketplaceUrl}`);
+      console.log(`  /plugin install ${plugin.name}@${plugin.marketplaceName}`);
+    } else {
+      note(plugin.settings.enabled ? "Publish to serve the marketplace." : "Off: turn it on on the MCP page and publish.");
+    }
+    const included = plugin.guides.filter((g) => g.included).length;
+    console.log(`  ${dim("server")}   ${plugin.settings.server === "local" ? `local, npx ${plugin.localPackage}` : "hosted"}`);
+    console.log(`  ${dim("skill")}    ${included} ${included === 1 ? "guide" : "guides"}, ${bytes(plugin.skillBytes)} index`);
+    table(
+      plugin.commands,
+      [
+        { header: "command", value: (c) => bold(`/${plugin.name}:${c.name}`), flex: 2, minWidth: 18 },
+        { header: "from", value: (c) => (c.fromGuide ? "guide" : dim("prompt")), flex: 1 },
+        { header: "description", value: (c) => c.description, flex: 4 },
+      ],
+      { emptyMessage: "No slash commands: publish prompts or guide workflows on the MCP page." },
+    );
+    if (plugin.github.repoUrl !== null) note(`GitHub: ${plugin.github.repoUrl}`);
+  });
+}
+
+/**
  * `octri mcp package publish [--version 1.2.0] --yes`
  *
  * Publishes to the linked npm account: a public release under the customer's

@@ -277,6 +277,10 @@ const GROUPS: Group[] = [
         description: "Guides turned into workflow tools (--guide, --stale)",
       },
       {
+        usage: "mcp plugin",
+        description: "Claude Code plugin: install lines, commands (--download <dir>, --practice)",
+      },
+      {
         usage: "mcp test",
         description: "Agent test run, dry (--models, --repeat, --draft, --fail-under 0.9)",
       },

@@ -16,7 +16,7 @@ import {
 } from "./commands/docs-settings.js";
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
-import { mcpPermissionSet, mcpScore, mcpTest, mcpWorkflows } from "./commands/mcp.js";
+import { mcpPermissionSet, mcpPlugin, mcpScore, mcpTest, mcpWorkflows } from "./commands/mcp.js";
 import { sdkQuickstartSet } from "./commands/sdk.js";
 import { webhooksCreate, webhooksUpdate } from "./commands/webhooks.js";
 import { PROXY_VARIABLES } from "./proxy.js";
@@ -181,6 +181,35 @@ test("mcp workflows only reads, and --stale fails CI when a guide moved on", asy
     await mcpWorkflows(context(["mcp", "workflows", "--stale", "--guide", "accept-a-payment"], false));
     assert.equal(process.exitCode, undefined);
     await assert.rejects(mcpWorkflows(context(["mcp", "workflows", "--guide", "nope"], false)), /No guide/);
+  });
+});
+
+// ─── MCP Claude Code plugin ───────────────────────────────────────────────────
+
+const PLUGIN = {
+  settings: { enabled: true, server: "hosted", practice: true, commands: "all", excludedPrompts: [], github: null },
+  planAllows: true,
+  name: "acme",
+  marketplaceName: "acme",
+  version: "1.2.0",
+  marketplaceUrl: "https://mcp.acme.com/claude/marketplace.json",
+  practice: false,
+  localPackage: "@octri/mcp",
+  commands: [{ name: "refund-order", prompt: "refund-order", description: "Refund an order.", fromGuide: true }],
+  guides: [{ slug: "quickstart", title: "Quickstart", included: true, trimmed: false }],
+  skillBytes: 2048,
+  skillLines: 40,
+  github: { connected: false, account: null, repoUrl: null },
+};
+
+test("mcp plugin only reads, and refuses a download the plan does not include", async () => {
+  await withApi({ "GET /projects/p1/mcp/plugin": PLUGIN }, async (calls) => {
+    await mcpPlugin(context(["mcp", "plugin"], false));
+    assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["GET /projects/p1/mcp/plugin"]);
+  });
+  await withApi({ "GET /projects/p1/mcp/plugin": { ...PLUGIN, planAllows: false } }, async (calls) => {
+    await assert.rejects(mcpPlugin(context(["mcp", "plugin", "--download", "out"], false)), /Starter plan/);
+    assert.equal(calls.length, 1);
   });
 });
 

@@ -2200,6 +2200,37 @@ export function downloadMcpPackage(
   return downloadBytes(client, `/projects/${projectId}/mcp/package/download`);
 }
 
+// ─── Claude Code plugin ─────────────────────────────────────────────────────
+// Mirrors McpClaudePluginResponse in @octri/shared (sdk/mcp-claude-plugin.ts).
+
+export interface McpClaudePlugin {
+  settings: { enabled: boolean; server: "hosted" | "local"; practice: boolean; commands: "all" | "workflows" | "none"; excludedPrompts: string[]; github: { repo: string; autoSync: boolean } | null };
+  planAllows: boolean;
+  name: string;
+  marketplaceName: string;
+  version: string;
+  marketplaceUrl: string | null;
+  practice: boolean;
+  localPackage: string;
+  commands: { name: string; prompt: string; description: string; fromGuide: boolean }[];
+  guides: { slug: string; title: string; included: boolean; trimmed: boolean }[];
+  skillBytes: number;
+  skillLines: number;
+  github: { connected: boolean; account: string | null; repoUrl: string | null };
+}
+
+export function getMcpClaudePlugin(client: OctriClient, projectId: string): Promise<McpClaudePlugin> {
+  return client.request(`/projects/${projectId}/mcp/plugin`);
+}
+
+export function downloadMcpClaudePlugin(
+  client: OctriClient,
+  projectId: string,
+  variant: "main" | "practice",
+): Promise<{ bytes: Buffer; filename: string | undefined }> {
+  return downloadBytes(client, `/projects/${projectId}/mcp/plugin/download${variant === "practice" ? "?variant=practice" : ""}`);
+}
+
 /** Absent `version`: the next patch after the last published one. */
 export function publishMcpPackage(
   client: OctriClient,
