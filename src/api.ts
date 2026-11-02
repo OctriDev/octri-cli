@@ -2163,8 +2163,11 @@ export async function listMcpCalls(
   return body.calls ?? [];
 }
 
+export type McpPackageRegistry = "npm" | "pypi";
+
 export interface McpPackageRelease {
   id: string;
+  registry: McpPackageRegistry;
   packageName: string;
   version: string;
   status: "publishing" | "published" | "failed";
@@ -2175,7 +2178,10 @@ export interface McpPackageRelease {
   error?: string;
 }
 
-/** The project's MCP server as an npm package under the customer's own name. */
+/**
+ * The project's MCP server as packages under the customer's own name: on npm,
+ * the server itself; on PyPI, a command that connects to the hosted server.
+ */
 export interface McpPackage {
   packageName: string;
   binName: string;
@@ -2183,7 +2189,9 @@ export interface McpPackage {
   nextVersion: string;
   toolCount: number;
   npmLinked: boolean;
+  /** Releases on both registries, newest first. */
   releases: McpPackageRelease[];
+  pypi: { packageName: string; binName: string; envPrefix: string; nextVersion: string; linked: boolean; hosted: boolean };
 }
 
 export function getMcpPackage(
@@ -2196,8 +2204,9 @@ export function getMcpPackage(
 export function downloadMcpPackage(
   client: OctriClient,
   projectId: string,
+  registry: McpPackageRegistry = "npm",
 ): Promise<{ bytes: Buffer; filename: string | undefined }> {
-  return downloadBytes(client, `/projects/${projectId}/mcp/package/download`);
+  return downloadBytes(client, `/projects/${projectId}/mcp/package/download${registry === "pypi" ? "?registry=pypi" : ""}`);
 }
 
 // ─── Claude Code plugin ─────────────────────────────────────────────────────
@@ -2236,10 +2245,11 @@ export function publishMcpPackage(
   client: OctriClient,
   projectId: string,
   version?: string,
+  registry: McpPackageRegistry = "npm",
 ): Promise<McpPackageRelease> {
   return client.request(`/projects/${projectId}/mcp/package/publish`, {
     method: "POST",
-    body: version === undefined ? {} : { version },
+    body: { ...(version !== undefined ? { version } : {}), ...(registry === "pypi" ? { registry } : {}) },
     timeoutMs: 180_000,
   });
 }

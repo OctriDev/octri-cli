@@ -16,7 +16,7 @@ import {
 } from "./commands/docs-settings.js";
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
-import { mcpPermissionSet, mcpPlugin, mcpScore, mcpTest, mcpWorkflows } from "./commands/mcp.js";
+import { mcpPackage, mcpPackagePublish, mcpPermissionSet, mcpPlugin, mcpScore, mcpTest, mcpWorkflows } from "./commands/mcp.js";
 import { sdkQuickstartSet } from "./commands/sdk.js";
 import { webhooksCreate, webhooksUpdate } from "./commands/webhooks.js";
 import { PROXY_VARIABLES } from "./proxy.js";
@@ -228,6 +228,28 @@ const LISTING = {
   outageWarnings: true,
   errorGuides: {},
 };
+
+const PACKAGE = {
+  packageName: "@acme/petstore-mcp", binName: "petstore-mcp", envPrefix: "PETSTORE", nextVersion: "1.0.1", toolCount: 3, npmLinked: true,
+  credentialVars: ["PETSTORE_API_KEY"],
+  releases: [{ id: "r1", registry: "npm", packageName: "@acme/petstore-mcp", version: "1.0.0", status: "published", toolCount: 3, requestedAt: "2026-11-01T00:00:00Z" }],
+  pypi: { packageName: "petstore-mcp", binName: "petstore-mcp", envPrefix: "PETSTORE", nextVersion: "1.0.0", linked: false, hosted: true },
+};
+
+test("mcp package publish goes to npm by default and to PyPI with --pypi, only with --yes", async () => {
+  const release = { ...PACKAGE.releases[0], id: "r2", status: "publishing" };
+  await withApi({ "GET /projects/p1/mcp/package": PACKAGE, "POST /projects/p1/mcp/package/publish": release }, async (calls) => {
+    await mcpPackage(context(["mcp", "package", "show"]));
+    await mcpPackagePublish(context(["mcp", "package", "publish", "--pypi"]));
+    await mcpPackagePublish(context(["mcp", "package", "publish", "--yes"]));
+    await mcpPackagePublish(context(["mcp", "package", "publish", "--pypi", "--version", "1.2.0", "--yes"]));
+    assert.deepEqual(calls.map((c) => [c.method, c.body]), [
+      ["GET", undefined],
+      ["POST", {}],
+      ["POST", { version: "1.2.0", registry: "pypi" }],
+    ]);
+  });
+});
 
 function testRun(state: string, verdicts: Record<string, "pass" | "flaky" | "fail">) {
   const models = Object.entries(verdicts).map(([model, verdict]) => ({

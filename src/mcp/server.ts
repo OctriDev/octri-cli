@@ -419,7 +419,7 @@ function tools(options: ServeOptions): Tool[] {
     {
       name: "octri_get_mcp_package",
       description:
-        "The npm package that ships the project's MCP server under the customer's name: package and command names, the version a publish would use, whether an npm account is linked, and past releases.",
+        "The packages that ship the project's MCP server under the customer's name: on npm the server itself, on PyPI (`pypi`) a command that connects to the hosted server. Package and command names, the version a publish would use, whether each account is linked, and past releases on both.",
       inputSchema: schema({}),
     },
 
@@ -818,8 +818,8 @@ function tools(options: ServeOptions): Tool[] {
     list.push({
       name: "octri_publish_mcp_package",
       description:
-        "Publish the project's MCP server to npm under the customer's package name, using the linked npm account. Irreversible. Omit `version` for the next patch.",
-      inputSchema: schema({ version: { type: "string" } }),
+        "Publish the project's MCP server under the customer's package name, to npm or, with `registry: \"pypi\"`, to PyPI, using the linked account. Irreversible. Omit `version` for the next patch.",
+      inputSchema: schema({ version: { type: "string" }, registry: { type: "string", enum: ["npm", "pypi"] } }),
     });
     list.push({
       name: "octri_publish_docs_nav",
@@ -1558,6 +1558,7 @@ async function dispatch(
         client,
         projectOf(ctx, args),
         typeof version === "string" && version !== "" ? version : undefined,
+        args.registry === "pypi" ? "pypi" : "npm",
       );
     }
 

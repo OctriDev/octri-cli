@@ -16,6 +16,12 @@ The rest of what the API Studio's octri.json holds, from the command line.
   `octri_get_docs_settings`, `octri_set_docs_settings`, `octri_get_playground`,
   `octri_set_playground`, `octri_get_custom_code`, `octri_set_custom_code`, and
   `octri_publish_docs_nav` behind `--allow-publish`.
+- `octri mcp package` shows the PyPI package beside the npm one, and which
+  registry each release went to. `mcp package download --pypi` and
+  `mcp package publish --pypi --yes` take the PyPI package, a command that
+  connects to the hosted server. `octri_publish_mcp_package` takes
+  `registry: "pypi"`.
+- `octri mcp test` reports the credits a run used in place of model spend.
 
 ## 1.0.7
 

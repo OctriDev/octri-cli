@@ -286,7 +286,7 @@ const GROUPS: Group[] = [
       },
       {
         usage: "mcp package",
-        description: "npm package under your name (download · publish)",
+        description: "npm and PyPI packages under your name (download · publish, --pypi)",
       },
       {
         usage: "mcp serve",

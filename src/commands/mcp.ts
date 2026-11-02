@@ -184,7 +184,7 @@ export async function mcpCalls(ctx: Context): Promise<void> {
   });
 }
 
-/** `octri mcp package`: the npm package, its next version, and past publishes. */
+/** `octri mcp package`: the npm and PyPI packages, their next versions, and past publishes. */
 export async function mcpPackage(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const pkg = await withSpinner("Loading MCP package", () =>
@@ -201,11 +201,20 @@ export async function mcpPackage(ctx: Context): Promise<void> {
       ["tools", String(pkg.toolCount)],
       ["npm account", pkg.npmLinked ? green("linked") : yellow("not linked")],
     ]);
+    heading("PyPI package");
+    keyValues([
+      ["package", bold(pkg.pypi.packageName)],
+      ["command", pkg.pypi.binName],
+      ["next version", pkg.pypi.nextVersion],
+      ["PyPI account", pkg.pypi.linked ? green("linked") : yellow("not linked")],
+      ["hosted server", pkg.pypi.hosted ? green("on") : yellow("off")],
+    ]);
     if (pkg.releases.length > 0) {
       heading("Releases");
       table(
         pkg.releases,
         [
+          { header: "registry", value: (r) => r.registry, flex: 6 },
           { header: "version", value: (r) => bold(r.version), flex: 4 },
           {
             header: "status",
@@ -223,18 +232,20 @@ export async function mcpPackage(ctx: Context): Promise<void> {
         ],
       );
     }
-    if (!pkg.npmLinked) {
-      note("Link an npm account under Publishing in SDK Studio, or run `octri mcp package download`.");
+    if (!pkg.npmLinked || !pkg.pypi.linked) {
+      note("Link an npm or PyPI account under Publishing in SDK Studio, or run `octri mcp package download [--pypi]`.");
     }
+    if (!pkg.pypi.hosted) note("The PyPI package connects to the hosted server: turn it on on the MCP page first.");
   });
 }
 
-/** `octri mcp package download [--out dir]`: the files a publish would send, zipped. */
+/** `octri mcp package download [--pypi] [--out dir]`: the files a publish would send, zipped. */
 export async function mcpPackageDownload(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const out = resolvePath(flagString(ctx.args, "out") ?? ".");
+  const registry = flagBool(ctx.args, "pypi") ? "pypi" : "npm";
   const { bytes: zip, filename } = await withSpinner("Downloading MCP package", () =>
-    api.downloadMcpPackage(ctx.client, projectId),
+    api.downloadMcpPackage(ctx.client, projectId, registry),
   );
 
   mkdirSync(out, { recursive: true });
@@ -278,11 +289,11 @@ export async function mcpPlugin(ctx: Context): Promise<void> {
 
   emit({ projectId, ...plugin }, () => {
     heading(`Claude Code plugin ${bold(plugin.name)} ${dim(plugin.version)}`);
-    if (!plugin.planAllows) note("Included from the Starter plan.");
+    if (!plugin.planAllows) note(plugin.marketplaceUrl !== null ? "Included from the Starter plan. After a downgrade the marketplace keeps serving for 30 days." : "Included from the Starter plan.");
     if (plugin.marketplaceUrl !== null) {
       console.log(`  /plugin marketplace add ${plugin.marketplaceUrl}`);
       console.log(`  /plugin install ${plugin.name}@${plugin.marketplaceName}`);
-    } else {
+    } else if (plugin.planAllows) {
       note(plugin.settings.enabled ? "Publish to serve the marketplace." : "Off: turn it on on the MCP page and publish.");
     }
     const included = plugin.guides.filter((g) => g.included).length;
@@ -302,22 +313,24 @@ export async function mcpPlugin(ctx: Context): Promise<void> {
 }
 
 /**
- * `octri mcp package publish [--version 1.2.0] --yes`
+ * `octri mcp package publish [--pypi] [--version 1.2.0] --yes`
  *
- * Publishes to the linked npm account: a public release under the customer's
- * name, so it asks for --yes like every other irreversible command.
+ * Publishes to the linked npm account, or the linked PyPI account with
+ * `--pypi`: a public release under the customer's name, so it asks for --yes
+ * like every other irreversible command.
  */
 export async function mcpPackagePublish(ctx: Context): Promise<void> {
   const projectId = ctx.projectId();
   const version = flagString(ctx.args, "version");
+  const registry = flagBool(ctx.args, "pypi") ? "pypi" : "npm";
   if (!flagBool(ctx.args, "yes")) {
     warn(
-      "This publishes the MCP server to npm under your package name. Re-run with --yes to confirm.",
+      `This publishes the MCP server to ${registry === "pypi" ? "PyPI" : "npm"} under your package name. Re-run with --yes to confirm.`,
     );
     return;
   }
   const release = await withSpinner("Publishing MCP package", () =>
-    api.publishMcpPackage(ctx.client, projectId, version),
+    api.publishMcpPackage(ctx.client, projectId, version, registry),
   );
   emit(release, () => {
     success(

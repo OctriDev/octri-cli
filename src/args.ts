@@ -49,6 +49,7 @@ const BOOLEAN_FLAGS = new Set([
   "commit-to-github",
   "enable",
   "disable",
+  "pypi",
 ]);
 
 const ALIASES: Record<string, string> = {
