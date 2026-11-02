@@ -233,7 +233,7 @@ function testRun(state: string, verdicts: Record<string, "pass" | "flaky" | "fai
   const models = Object.entries(verdicts).map(([model, verdict]) => ({
     model, attempts: 1, passed: verdict === "fail" ? 0 : 1, passRate: verdict === "fail" ? 0 : verdict === "flaky" ? 0.5 : 1,
     tasksPassed: verdict === "pass" ? 1 : 0, tasksFlaky: verdict === "flaky" ? 1 : 0, tasksFailed: verdict === "fail" ? 1 : 0,
-    verdict, tokensPerTask: 1200, p95ModelMs: 800, costUsd: 0.004,
+    verdict, tokensPerTask: 1200, p95ModelMs: 800,
   }));
   return {
     id: "run1", state, fingerprint: "f", mode: "dry", models: Object.keys(verdicts), repeat: 1,
@@ -241,7 +241,7 @@ function testRun(state: string, verdicts: Record<string, "pass" | "flaky" | "fai
     attempts: Object.entries(verdicts).map(([model, verdict]) => ({ taskId: "gen-get-pets", model, repeat: 0, outcome: verdict === "fail" ? "wrongTool" : "pass" })),
     total: models.length,
     ...(state === "done"
-      ? { summary: { verdict: models.some((m) => m.verdict === "fail") ? "fail" : "pass", models, tasks: models.map((m) => ({ taskId: "gen-get-pets", model: m.model, passed: m.passed, attempts: 1, verdict: m.verdict })), costUsd: 0.008 } }
+      ? { summary: { verdict: models.some((m) => m.verdict === "fail") ? "fail" : "pass", models, tasks: models.map((m) => ({ taskId: "gen-get-pets", model: m.model, passed: m.passed, attempts: 1, verdict: m.verdict })) }, credits: 4 }
       : {}),
     createdAt: "2026-10-29T00:00:00Z",
   };

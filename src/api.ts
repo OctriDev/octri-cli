@@ -2042,7 +2042,6 @@ export interface McpTestModelSummary {
   verdict: McpTestVerdict;
   tokensPerTask: number;
   p95ModelMs: number;
-  costUsd: number;
 }
 
 export interface McpTestRunView {
@@ -2059,8 +2058,9 @@ export interface McpTestRunView {
     verdict: McpTestVerdict;
     models: McpTestModelSummary[];
     tasks: { taskId: string; model: string; passed: number; attempts: number; verdict: McpTestVerdict }[];
-    costUsd: number;
   };
+  /** Credits the run was charged, once it ends. */
+  credits?: number;
   error?: string;
   createdAt: string;
 }

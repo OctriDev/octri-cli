@@ -553,7 +553,7 @@ export async function mcpTest(ctx: Context): Promise<void> {
       ["run", run.id],
       ["state", run.state],
       ["tasks", String(run.tasks.length)],
-      ["model spend", summary !== undefined ? `$${summary.costUsd.toFixed(2)}` : "-"],
+      ["credits used", run.credits !== undefined ? run.credits.toLocaleString("en-US") : "-"],
     ]);
     table(
       summary?.models ?? [],
