@@ -1782,14 +1782,17 @@ export function quickstartSlugs(endpoints: Record<string, unknown>): string[] {
 
 /**
  * An endpoint's slug from what a person or agent typed: the slug itself, an
- * operationId, or `METHOD /path`.
+ * operationId, or `METHOD /path`. A slug the project's SDK settings already
+ * hold resolves without parsing the spec, which a large spec can refuse.
  */
 export async function resolveEndpointSlug(
   client: OctriClient,
   projectId: string,
   typed: string,
+  knownSlugs: readonly string[] = [],
 ): Promise<string> {
   const wanted = typed.trim();
+  if (knownSlugs.includes(wanted)) return wanted;
   const operations = await listOperations(client, projectId);
   const [method, path] = wanted.split(/\s+/, 2);
   const match = operations.find(
@@ -1818,8 +1821,13 @@ export async function setQuickstart(
   on: boolean,
   changelog?: string,
 ): Promise<{ slug: string; revision: number }> {
-  const slug = await resolveEndpointSlug(client, projectId, endpointRef);
   const bundle = await getSdkSettings(client, projectId);
+  const slug = await resolveEndpointSlug(
+    client,
+    projectId,
+    endpointRef,
+    Object.keys(bundle.sdkEndpoints),
+  );
 
   const endpoints = { ...bundle.sdkEndpoints };
   const config = {

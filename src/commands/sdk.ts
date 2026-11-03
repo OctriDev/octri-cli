@@ -85,9 +85,13 @@ export async function sdkSettingsGet(ctx: Context): Promise<void> {
   );
 
   // `--key a.b.c` prints one value, which is what scripts and agents want.
+  // Keys name a setting (`transforms`, as listed under "settings:" below);
+  // bundle fields such as `revision` resolve when no setting has the name.
   const key = flagString(ctx.args, "key");
   if (key !== undefined) {
-    const value = dig(bundle as unknown as Record<string, unknown>, key);
+    const value =
+      dig(bundle.sdkSettings, key) ??
+      dig(bundle as unknown as Record<string, unknown>, key);
     emit({ key, value }, () => line(JSON.stringify(value, null, 2)));
     return;
   }

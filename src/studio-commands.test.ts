@@ -17,7 +17,7 @@ import {
 import { endpointsAdd } from "./commands/endpoints.js";
 import { githubDocsPull } from "./commands/github.js";
 import { mcpPackage, mcpPackagePublish, mcpPermissionSet, mcpPlugin, mcpScore, mcpTest, mcpWorkflows } from "./commands/mcp.js";
-import { sdkQuickstartSet } from "./commands/sdk.js";
+import { sdkQuickstartSet, sdkSettingsGet } from "./commands/sdk.js";
 import { webhooksCreate, webhooksUpdate } from "./commands/webhooks.js";
 import { PROXY_VARIABLES } from "./proxy.js";
 import { configureOutput } from "./ui/output.js";
@@ -495,6 +495,64 @@ test("sdk quickstart set resolves METHOD /path and keeps the other endpoint conf
         "get-users": { name: "list", quickstart: true },
         "post-users": { quickstart: true },
       });
+    },
+  );
+});
+
+test("sdk settings get --key reads a setting, and a bundle field when no setting has the name", async () => {
+  const printed: unknown[] = [];
+  const write = process.stdout.write.bind(process.stdout);
+  configureOutput({ json: true });
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    printed.push(JSON.parse(String(chunk)));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    await withApi(
+      {
+        "GET /projects/p1/sdk-settings": {
+          sdkSettings: { transforms: [{ command: "merge" }] },
+          sdkEndpoints: {},
+          revision: 5,
+          deprecationBaselines: { sdk: null, docs: null },
+          repoHookKeys: [],
+        },
+      },
+      async () => {
+        await sdkSettingsGet(context(["sdk", "settings", "get", "--key", "transforms"]));
+        await sdkSettingsGet(context(["sdk", "settings", "get", "--key", "revision"]));
+      },
+    );
+  } finally {
+    process.stdout.write = write;
+    configureOutput({ json: false });
+  }
+  assert.deepEqual(printed, [
+    { key: "transforms", value: [{ command: "merge" }] },
+    { key: "revision", value: 5 },
+  ]);
+});
+
+test("sdk quickstart set takes a known slug without parsing the spec", async () => {
+  await withApi(
+    {
+      "GET /projects/p1/sdk-settings": {
+        sdkSettings: { packageName: "acme" },
+        sdkEndpoints: { "get-users": { name: "list" } },
+        revision: 3,
+        deprecationBaselines: { sdk: null, docs: null },
+        repoHookKeys: [],
+      },
+      "PUT /projects/p1/sdk-settings": {},
+    },
+    async (calls) => {
+      await sdkQuickstartSet(context(["sdk", "quickstart", "set", "get-users"]));
+      assert.equal(
+        calls.some((call) => call.path.endsWith("/sdk/operations")),
+        false,
+      );
+      const body = writes(calls, "PUT")[0]?.body as { endpoints: Record<string, unknown> };
+      assert.deepEqual(body.endpoints, { "get-users": { name: "list", quickstart: true } });
     },
   );
 });
